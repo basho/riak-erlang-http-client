@@ -53,8 +53,15 @@ ping(Rhc) ->
 get_client_id(Rhc) ->
     {ok, client_id(Rhc, [])}.
 
-get_server_info(_Rhc) ->
-    throw(not_implemented).
+get_server_info(Rhc) ->
+    Url = stats_url(Rhc),
+    case request(get, Url, ["200"]) of
+        {ok, _Status, _Headers, Body} ->
+            {struct, Response} = mochijson2:decode(Body),
+            {ok, erlify_server_info(Response)};
+        {error, Error} ->
+            {error, Error}
+    end.
 
 get(Rhc, Bucket, Key) ->
     get(Rhc, Bucket, Key, []).
@@ -183,6 +190,9 @@ mapred_url(Rhc) ->
 
 ping_url(Rhc) ->
     binary_to_list(iolist_to_binary([root_url(Rhc), "ping/"])).
+
+stats_url(Rhc) ->
+    binary_to_list(iolist_to_binary([root_url(Rhc), "stats/"])).
     
 make_url(Rhc=#rhc{prefix=Prefix}, Bucket, Key, Query) ->
     binary_to_list(
@@ -381,3 +391,9 @@ httpify_bucket_props(Props) ->
 httpify_bucket_prop(n_val, N) -> {?JSON_N_VAL, N};
 httpify_bucket_prop(allow_mult, AM) -> {?JSON_ALLOW_MULT, AM};
 httpify_bucket_prop(_Ignore, _) -> [].
+
+erlify_server_info(Props) ->
+    lists:flatten([ erlify_server_info(K, V) || {K, V} <- Props ]).
+erlify_server_info(<<"nodename">>, Name) -> {node, Name};
+erlify_server_info(<<"riak_kv_version">>, Vsn) -> {server_version, Vsn};
+erlify_server_info(_Ignore, _) -> [].
