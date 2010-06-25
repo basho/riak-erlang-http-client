@@ -16,6 +16,7 @@
          mapred_stream/4, mapred_stream/5,
          mapred_bucket/3, mapred_bucket/4,
          mapred_bucket_stream/5]).
+-export([list_keys_acceptor/2]).
 
 -include("raw_http.hrl").
 
@@ -118,11 +119,21 @@ delete(Rhc, Bucket, Key, Options) ->
 list_buckets(_Rhc) ->
     throw(not_implemented).
 
-list_keys(_Rhc, _Bucket) ->
-    throw(not_implemented).
+list_keys(Rhc, Bucket) ->
+    {ok, ReqId} = stream_list_keys(Rhc, Bucket),
+    wait_for_listkeys(ReqId, ?DEFAULT_TIMEOUT).
 
-stream_list_keys(_Rhc, _Bucket) ->
-    throw(not_implemented).
+stream_list_keys(Rhc, Bucket) ->
+    Url = make_url(Rhc, Bucket, undefined, [{<<"keys">>, <<"stream">>},
+                                            {<<"props">>, <<"false">>}]),
+    StartRef = make_ref(),
+    Pid = spawn(rhc, list_keys_acceptor, [self(), StartRef]),
+    case request_stream(Pid, get, Url) of
+        {ok, ReqId}    ->
+            Pid ! {ibrowse_req_id, StartRef, ReqId},
+            {ok, StartRef};
+        {error, Error} -> {error, Error}
+    end.
 
 get_bucket(Rhc, Bucket) ->
     Url = make_url(Rhc, Bucket, undefined, [{<<"keys">>, <<"false">>}]),
@@ -216,6 +227,18 @@ request(Method, Url, Expect, Headers, Body) ->
                 true -> Resp;
                 false -> {error, Resp}
             end;
+        Error ->
+            Error
+    end.
+
+request_stream(Pid, Method, Url) ->
+    request_stream(Pid, Method, Url, []).
+request_stream(Pid, Method, Url, Headers) ->
+    request_stream(Pid, Method, Url, Headers, []).
+request_stream(Pid, Method, Url, Headers, Body) ->
+    case ibrowse:send_req(Url, Headers, Method, Body, [{stream_to, {Pid,once}}]) of
+        {ibrowse_req_id, ReqId} ->
+            {ok, ReqId};
         Error ->
             Error
     end.
@@ -397,3 +420,62 @@ erlify_server_info(Props) ->
 erlify_server_info(<<"nodename">>, Name) -> {node, Name};
 erlify_server_info(<<"riak_kv_version">>, Vsn) -> {server_version, Vsn};
 erlify_server_info(_Ignore, _) -> [].
+
+
+list_keys_acceptor(Pid, PidRef) ->
+    receive
+        {ibrowse_req_id, PidRef, IbrowseRef} ->
+            list_keys_acceptor(Pid,PidRef,IbrowseRef,[])
+    after ?DEFAULT_TIMEOUT ->
+            Pid ! {PidRef, {error, {timeout, []}}}
+    end.
+
+list_keys_acceptor(Pid,PidRef,IbrowseRef,Buffer) ->
+    receive
+        {ibrowse_async_response_end, IbrowseRef} ->
+            if Buffer =:= [] ->
+                    Pid ! {PidRef, done};
+               true ->
+                    Pid ! {PidRef, {error, {not_parseable, Buffer}}}
+            end;
+        {ibrowse_async_response, IbrowseRef, {error,Error}} ->
+            Pid ! {PidRef, {error, Error}};
+        {ibrowse_async_response, IbrowseRef, []} ->
+            %% ignore empty data
+            ibrowse:stream_next(IbrowseRef),
+            list_keys_acceptor(Pid,PidRef,IbrowseRef,Buffer);
+        {ibrowse_async_response, IbrowseRef, Data} ->
+            case catch mochijson2:decode([Buffer,Data]) of
+                {struct, Response} ->
+                    Keys = proplists:get_value(<<"keys">>, Response, []),
+                    Pid ! {PidRef, {keys, Keys}},
+                    ibrowse:stream_next(IbrowseRef),
+                    list_keys_acceptor(Pid,PidRef,IbrowseRef,[]);
+                {'EXIT', _} ->
+                    ibrowse:stream_next(IbrowseRef),
+                    list_keys_acceptor(Pid,PidRef,IbrowseRef,
+                                       [Buffer,Data])
+            end;
+        {ibrowse_async_headers, IbrowseRef, Status, Headers} ->
+            if Status =/= "200" ->
+                    Pid ! {PidRef, {error, {Status, Headers}}};
+               true ->
+                    ibrowse:stream_next(IbrowseRef),
+                    list_keys_acceptor(Pid,PidRef,IbrowseRef,Buffer)
+            end
+    after ?DEFAULT_TIMEOUT ->
+            Pid ! {PidRef, {error, timeout}}
+    end.
+
+%% @private
+wait_for_listkeys(ReqId, Timeout) ->
+    wait_for_listkeys(ReqId,Timeout,[]).
+%% @private
+wait_for_listkeys(ReqId,Timeout,Acc) ->
+    receive
+        {ReqId, done} -> {ok, lists:flatten(Acc)};
+        {ReqId, {keys,Res}} -> wait_for_listkeys(ReqId,Timeout,[Res|Acc]);
+        {ReqId, {error, Reason}} -> {error, Reason}
+    after Timeout ->
+            {error, {timeout, Acc}}
+    end.
