@@ -125,8 +125,8 @@ list_keys(Rhc, Bucket) ->
     wait_for_listkeys(ReqId, ?DEFAULT_TIMEOUT).
 
 stream_list_keys(Rhc, Bucket) ->
-    Url = make_url(Rhc, Bucket, undefined, [{<<"keys">>, <<"stream">>},
-                                            {<<"props">>, <<"false">>}]),
+    Url = make_url(Rhc, Bucket, undefined, [{?Q_KEYS, ?Q_STREAM},
+                                            {?Q_PROPS, ?Q_FALSE}]),
     StartRef = make_ref(),
     Pid = spawn(rhc, list_keys_acceptor, [self(), StartRef]),
     case request_stream(Pid, get, Url) of
@@ -137,7 +137,7 @@ stream_list_keys(Rhc, Bucket) ->
     end.
 
 get_bucket(Rhc, Bucket) ->
-    Url = make_url(Rhc, Bucket, undefined, [{<<"keys">>, <<"false">>}]),
+    Url = make_url(Rhc, Bucket, undefined, [{?Q_KEYS, ?Q_FALSE}]),
     case request(get, Url, ["200"]) of
         {ok, "200", _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
@@ -151,7 +151,7 @@ set_bucket(Rhc, Bucket, Props0) ->
     Url = make_url(Rhc, Bucket, undefined, []),
     Headers =  [{"Content-Type", "application/json"}],
     Props = httpify_bucket_props(Props0),
-    Body = mochijson2:encode({struct, [{<<"props">>, {struct, Props}}]}),
+    Body = mochijson2:encode({struct, [{?Q_PROPS, {struct, Props}}]}),
     case request(put, Url, ["204"], Headers, Body) of
         {ok, "204", _Headers, _Body} -> ok;
         {error, Error}               -> {error, Error}
@@ -473,7 +473,7 @@ list_keys_acceptor(Pid,PidRef,IbrowseRef,Buffer) ->
         {ibrowse_async_response, IbrowseRef, Data} ->
             case catch mochijson2:decode([Buffer,Data]) of
                 {struct, Response} ->
-                    Keys = proplists:get_value(<<"keys">>, Response, []),
+                    Keys = proplists:get_value(?JSON_KEYS, Response, []),
                     Pid ! {PidRef, {keys, Keys}},
                     ibrowse:stream_next(IbrowseRef),
                     list_keys_acceptor(Pid,PidRef,IbrowseRef,[]);
