@@ -263,7 +263,8 @@ get_q_params(Rhc, Options) ->
     options_list([r], Options ++ options(Rhc)).
 
 put_q_params(Rhc, Options) ->
-    options_list([r,w,dw,return_body], Options ++ options(Rhc)).
+    options_list([r,w,dw,{return_body,"returnbody"}],
+                 Options ++ options(Rhc)).
 
 delete_q_params(Rhc, Options) ->
     options_list([r,rw], Options ++ options(Rhc)).
@@ -272,8 +273,12 @@ options_list(Keys, Options) ->
     options_list(Keys, Options, []).
 
 options_list([K|Rest], Options, Acc) ->
-    NewAcc = case proplists:lookup(K, Options) of
-                 {K,V} -> [{K,V}|Acc];
+    {Key,Alias} = case K of
+                      {_, _} -> K;
+                      _ -> {K, K}
+                  end,
+    NewAcc = case proplists:lookup(Key, Options) of
+                 {Key,V} -> [{Alias,V}|Acc];
                  none  -> Acc
              end,
     options_list(Rest, Options, NewAcc);
@@ -308,13 +313,17 @@ vtag_from_headers(Headers) ->
            
 
 lastmod_from_headers(Headers) ->
-    RfcDate = proplists:get_value("Last-Modified", Headers),
-    GS = calendar:datetime_to_gregorian_seconds(
-           httpd_util:convert_request_date(RfcDate)),
-    ES = GS-62167219200, %% gregorian seconds of the epoch
-    {ES div 1000000, % Megaseconds
-     ES rem 1000000, % Seconds
-     0}.              % Microseconds
+    case proplists:get_value("Last-Modified", Headers) of
+        undefined ->
+            undefined;
+        RfcDate ->
+            GS = calendar:datetime_to_gregorian_seconds(
+                   httpd_util:convert_request_date(RfcDate)),
+            ES = GS-62167219200, %% gregorian seconds of the epoch
+            {ES div 1000000, % Megaseconds
+             ES rem 1000000, % Seconds
+             0}              % Microseconds
+    end.
 
 decode_siblings(Boundary, "\r\n"++SibBody) ->
     decode_siblings(Boundary, SibBody);
@@ -335,8 +344,12 @@ headers_to_metadata(Headers) ->
     VTag = vtag_from_headers(Headers),
     VCUserMeta = dict:store(?MD_VTAG, VTag, CUserMeta),
 
-    LastMod = lastmod_from_headers(Headers),
-    LVCUserMeta = dict:store(?MD_LASTMOD, LastMod, VCUserMeta),
+    LVCUserMeta = case lastmod_from_headers(Headers) of
+                      undefined ->
+                          VCUserMeta;
+                      LastMod ->
+                          dict:store(?MD_LASTMOD, LastMod, VCUserMeta)
+                  end,
 
     case extract_links(Headers) of
         [] -> LVCUserMeta;
