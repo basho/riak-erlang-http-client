@@ -379,8 +379,9 @@ serialize_riakc_obj(Rhc, Object) ->
 make_headers(Rhc, Object) ->
     MD = riakc_obj:get_update_metadata(Object),
     CType = case dict:find(?MD_CTYPE, MD) of
-                {ok, C} -> C;
-                error -> <<"application/octet-stream">>
+                {ok, C} when is_list(C) -> C;
+                {ok, C} when is_binary(C) -> binary_to_list(C);
+                error -> "application/octet-stream"
             end,
     Links = case dict:find(?MD_LINKS, MD) of
                 {ok, L} -> L;
@@ -388,7 +389,7 @@ make_headers(Rhc, Object) ->
             end,
     VClock = riakc_obj:vclock(Object),
     lists:flatten(
-      [{?HEAD_CTYPE, binary_to_list(CType)},
+      [{?HEAD_CTYPE, CType},
        [ {?HEAD_LINK, encode_links(Rhc, Links)} || Links =/= [] ],
        [ {?HEAD_VCLOCK, base64:encode_to_string(VClock)}
          || VClock =/= undefined ]
