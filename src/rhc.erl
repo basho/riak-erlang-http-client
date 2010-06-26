@@ -1,6 +1,10 @@
 -module(rhc).
 
 -export([create/0, create/4,
+         ip/1,
+         port/1,
+         prefix/1,
+         options/1,
          ping/1,
          get_client_id/1,
          get_server_info/1,
@@ -42,6 +46,12 @@ create(IP, Port, Prefix, Opts0) when is_list(IP), is_integer(Port),
                    Opts0
            end,
     #rhc{ip=IP, port=Port, prefix=Prefix, options=Opts}.
+
+ip(#rhc{ip=IP}) -> IP.
+
+port(#rhc{port=Port}) -> Port.
+
+prefix(#rhc{prefix=Prefix}) -> Prefix.
 
 ping(Rhc) ->
     Url = ping_url(Rhc),
