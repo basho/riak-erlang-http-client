@@ -5,9 +5,7 @@
 -export([encode_mapred/2,
          wait_for_mapred/2]).
 %% spawnable exports
--export([mapred_acceptor/2]).
-
--include("rhc.hrl").
+-export([mapred_acceptor/3]).
 
 %%% REQUEST ENCODING
 
@@ -115,17 +113,17 @@ wait_for_mapred(ReqId, Timeout, Acc) ->
 
 %% @doc first stage of ibrowse response handling - just waits to be
 %%      told what ibrowse request ID to expect
-mapred_acceptor(Pid, PidRef) ->
+mapred_acceptor(Pid, PidRef, Timeout) ->
     receive
         {ibrowse_req_id, PidRef, IbrowseRef} ->
-            mapred_acceptor(Pid,PidRef,IbrowseRef)
-    after ?DEFAULT_TIMEOUT ->
+            mapred_acceptor(Pid,PidRef,Timeout,IbrowseRef)
+    after Timeout ->
             Pid ! {PidRef, {error, {timeout, []}}}
     end.
 
 %% @doc second stage of ibrowse response handling - waits for headers
 %%      and extracts the boundary of the multipart/mixed message
-mapred_acceptor(Pid,PidRef,IbrowseRef) ->
+mapred_acceptor(Pid,PidRef,Timeout,IbrowseRef) ->
     receive
         {ibrowse_async_headers, IbrowseRef, Status, Headers} ->
             if Status =/= "200" ->
@@ -138,10 +136,11 @@ mapred_acceptor(Pid,PidRef,IbrowseRef) ->
                     stream_parts_acceptor(
                       Pid, PidRef,
                       webmachine_multipart:stream_parts(
-                        {[],stream_parts_helper(Pid,PidRef,IbrowseRef,true)},
+                        {[],stream_parts_helper(Pid,PidRef,Timeout,
+                                                IbrowseRef,true)},
                         Boundary))
             end
-    after ?DEFAULT_TIMEOUT ->
+    after Timeout ->
             Pid ! {PidRef, {error, timeout}}
     end.
 
@@ -159,7 +158,7 @@ stream_parts_acceptor(Pid,PidRef,{{_Name, _Param, Part},Next}) ->
 
 %% @doc "next" fun for the webmachine_multipart streamer - waits for
 %%      an ibrowse message, and then returns it to the streamer for processing
-stream_parts_helper(Pid, PidRef, IbrowseRef, First) ->              
+stream_parts_helper(Pid, PidRef, Timeout, IbrowseRef, First) ->              
     fun() ->
             ibrowse:stream_next(IbrowseRef),
             receive
@@ -169,7 +168,8 @@ stream_parts_helper(Pid, PidRef, IbrowseRef, First) ->
                     Pid ! {PidRef, {error, Error}},
                     throw({error, {ibrowse, Error}});
                 {ibrowse_async_response, IbrowseRef, []} ->
-                    Fun = stream_parts_helper(Pid, PidRef, IbrowseRef, First),
+                    Fun = stream_parts_helper(Pid, PidRef, Timeout,
+                                              IbrowseRef, First),
                     Fun();
                 {ibrowse_async_response, IbrowseRef, Data0} ->
                     %% the streamer doesn't like the body to start with
@@ -184,8 +184,9 @@ stream_parts_helper(Pid, PidRef, IbrowseRef, First) ->
                                    Data0
                            end,
                     {list_to_binary(Data),
-                     stream_parts_helper(Pid, PidRef, IbrowseRef,false)}
-            after ?DEFAULT_TIMEOUT ->
+                     stream_parts_helper(Pid, PidRef, Timeout,
+                                         IbrowseRef, false)}
+            after Timeout ->
                     Pid ! {PidRef, {error, timeout}},
                     throw({error, {ibrowse, timeout}})
             end

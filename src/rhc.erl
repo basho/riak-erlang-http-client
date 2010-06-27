@@ -192,7 +192,7 @@ mapred_stream(Rhc, Inputs, Query, ClientPid) ->
 mapred_stream(Rhc, Inputs, Query, ClientPid, Timeout) ->
     Url = mapred_url(Rhc),
     StartRef = make_ref(),
-    Pid = spawn(rhc_mapred, mapred_acceptor, [ClientPid, StartRef]),
+    Pid = spawn(rhc_mapred, mapred_acceptor, [ClientPid, StartRef, Timeout]),
     Headers = [{?HEAD_CTYPE, "application/json"}],
     Body = rhc_mapred:encode_mapred(Inputs, Query),
     case request_stream(Pid, post, Url, Headers, Body) of
