@@ -1,4 +1,5 @@
 \.beam$
 ^deps/.*
 ~$
+^\.DS_Store$
 
