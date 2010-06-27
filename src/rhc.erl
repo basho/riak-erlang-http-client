@@ -256,7 +256,8 @@ request(Method, Url, Expect, Headers) ->
     request(Method, Url, Expect, Headers, []).
 request(Method, Url, Expect, Headers, Body) ->
     Accept = {"Accept", "multipart/mixed, */*;q=0.9"},
-    case ibrowse:send_req(Url, [Accept|Headers], Method, Body) of
+    case ibrowse:send_req(Url, [Accept|Headers], Method, Body,
+                          [{response_format, binary}]) of
         Resp={ok, Status, _, _} ->
             case lists:member(Status, Expect) of
                 true -> Resp;
@@ -271,7 +272,9 @@ request_stream(Pid, Method, Url) ->
 request_stream(Pid, Method, Url, Headers) ->
     request_stream(Pid, Method, Url, Headers, []).
 request_stream(Pid, Method, Url, Headers, Body) ->
-    case ibrowse:send_req(Url, Headers, Method, Body, [{stream_to, {Pid,once}}]) of
+    case ibrowse:send_req(Url, Headers, Method, Body,
+                          [{stream_to, {Pid,once}},
+                           {response_format, binary}]) of
         {ibrowse_req_id, ReqId} ->
             {ok, ReqId};
         Error ->

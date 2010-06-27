@@ -22,7 +22,7 @@ make_riakc_obj(Bucket, Key, Headers, Body) ->
         {_CType, _} ->
             riakc_obj:new_obj(
               Bucket, Key, Vclock,
-              [{headers_to_metadata(Headers), list_to_binary(Body)}])
+              [{headers_to_metadata(Headers), Body}])
     end.
 
 ctype_from_headers(Headers) ->
@@ -51,11 +51,11 @@ lastmod_from_headers(Headers) ->
              0}              % Microseconds
     end.
 
-decode_siblings(Boundary, "\r\n"++SibBody) ->
+decode_siblings(Boundary, <<"\r\n",SibBody/binary>>) ->
     decode_siblings(Boundary, SibBody);
 decode_siblings(Boundary, SibBody) ->
     Parts = webmachine_multipart:get_all_parts(
-              list_to_binary(SibBody), Boundary),
+              SibBody, Boundary),
     [ {headers_to_metadata([ {binary_to_list(H), binary_to_list(V)}
                              || {H, V} <- Headers ]),
        element(1, split_binary(Body, size(Body)-2))} %% remove trailing \r\n

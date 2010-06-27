@@ -176,14 +176,14 @@ stream_parts_helper(Pid, PidRef, Timeout, IbrowseRef, First) ->
                     %% CRLF, so strip that off on the first chunk
                     Data = if First ->
                                    case Data0 of
-                                       "\n"++D -> D;
-                                       "\r\n"++D -> D;
+                                       <<"\n",D/binary>> -> D;
+                                       <<"\r\n",D/binary>> -> D;
                                        _ -> Data0
                                    end;
                               true ->
                                    Data0
                            end,
-                    {list_to_binary(Data),
+                    {Data,
                      stream_parts_helper(Pid, PidRef, Timeout,
                                          IbrowseRef, false)}
             after Timeout ->
