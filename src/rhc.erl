@@ -20,17 +20,9 @@
          mapred_stream/4, mapred_stream/5,
          mapred_bucket/3, mapred_bucket/4,
          mapred_bucket_stream/5]).
--export([list_keys_acceptor/2,
-         mapred_acceptor/2]).
 
 -include("raw_http.hrl").
-
--define(DEFAULT_TIMEOUT, 60000).
-
--record(rhc, {ip,
-              port,
-              prefix,
-              options}).
+-include("rhc.hrl").
 
 create() ->
     create("127.0.0.1", 8098, "riak", []).
@@ -83,7 +75,7 @@ get(Rhc, Bucket, Key, Options) ->
     Url = make_url(Rhc, Bucket, Key, Qs),
     case request(get, Url, ["200", "300"]) of
         {ok, _Status, Headers, Body} ->
-            {ok, make_riakc_obj(Bucket, Key, Headers, Body)};
+            {ok, rhc_obj:make_riakc_obj(Bucket, Key, Headers, Body)};
         {error, {ok, "404", _, _}} ->
             {error, notfound};
         {error, Error} ->
@@ -101,7 +93,7 @@ put(Rhc, Object, Options) ->
     Method = if Key =:= undefined -> post;
                 true              -> put
              end,
-    {Headers0, Body} = serialize_riakc_obj(Rhc, Object),
+    {Headers0, Body} = rhc_obj:serialize_riakc_obj(Rhc, Object),
     Headers = [{?HEAD_CLIENT, client_id(Rhc, Options)}
                |Headers0],
     case request(Method, Url, ["200", "204", "300"], Headers, Body) of
@@ -109,7 +101,8 @@ put(Rhc, Object, Options) ->
             if Status =:= "204" ->
                     ok;
                true ->
-                    {ok, make_riakc_obj(Bucket, Key, ReplyHeaders, ReplyBody)}
+                    {ok, rhc_obj:make_riakc_obj(Bucket, Key,
+                                                ReplyHeaders, ReplyBody)}
             end;
         {error, Error} ->
             {error, Error}
@@ -132,13 +125,21 @@ list_buckets(_Rhc) ->
 
 list_keys(Rhc, Bucket) ->
     {ok, ReqId} = stream_list_keys(Rhc, Bucket),
-    wait_for_listkeys(ReqId, ?DEFAULT_TIMEOUT).
+    rhc_listkeys:wait_for_listkeys(ReqId, ?DEFAULT_TIMEOUT).
 
+%% @doc Stream key lists to a Pid.  Messages sent to the Pid will
+%%      be of the form {reference(), message()} where message()
+%%      is one of:
+%%         done -- end of key list, no more messages will be sent
+%%         {keys, [key()]}] -- a portion of the key list
+%%         {error, term()} -- an error occurred
+%% @spec stream_list_keys(rhc(), bucket()) ->
+%%          {ok, reference()}|{error, term()}
 stream_list_keys(Rhc, Bucket) ->
     Url = make_url(Rhc, Bucket, undefined, [{?Q_KEYS, ?Q_STREAM},
                                             {?Q_PROPS, ?Q_FALSE}]),
     StartRef = make_ref(),
-    Pid = spawn(rhc, list_keys_acceptor, [self(), StartRef]),
+    Pid = spawn(rhc_listkeys, list_keys_acceptor, [self(), StartRef]),
     case request_stream(Pid, get, Url) of
         {ok, ReqId}    ->
             Pid ! {ibrowse_req_id, StartRef, ReqId},
@@ -152,7 +153,7 @@ get_bucket(Rhc, Bucket) ->
         {ok, "200", _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {struct, Props} = proplists:get_value(?JSON_PROPS, Response),
-            {ok, erlify_bucket_props(Props)};
+            {ok, rhc_bucket:erlify_props(Props)};
         {error, Error} ->
             {error, Error}
     end.
@@ -160,7 +161,7 @@ get_bucket(Rhc, Bucket) ->
 set_bucket(Rhc, Bucket, Props0) ->
     Url = make_url(Rhc, Bucket, undefined, []),
     Headers =  [{"Content-Type", "application/json"}],
-    Props = httpify_bucket_props(Props0),
+    Props = rhc_bucket:httpify_props(Props0),
     Body = mochijson2:encode({struct, [{?Q_PROPS, {struct, Props}}]}),
     case request(put, Url, ["204"], Headers, Body) of
         {ok, "204", _Headers, _Body} -> ok;
@@ -172,17 +173,28 @@ mapred(Rhc, Inputs, Query) ->
 
 mapred(Rhc, Inputs, Query, Timeout) ->
     {ok, ReqId} = mapred_stream(Rhc, Inputs, Query, self(), Timeout),
-    wait_for_mapred(ReqId, Timeout).
+    rhc_mapred:wait_for_mapred(ReqId, Timeout).
 
 mapred_stream(Rhc, Inputs, Query, ClientPid) ->
     mapred_stream(Rhc, Inputs, Query, ClientPid, ?DEFAULT_TIMEOUT).
 
+%% @doc Stream map/reduce results to a Pid.  Messages sent to the Pid
+%%      will be of the form {reference(), message()}, where message()
+%%      is one of:
+%%         done} -- query has completed, no more messages will be sent
+%%         {mapred, integer(), mochijson()} -- partial results of a query
+%%              the second item in the tuple is the (zero-indexed) phase
+%%              number, and the third is the JSON-decoded results
+%%         {error, term()} - an error occurred
+%% @spec mapred_stream(rhc(), mapred_input(), [query_phase()],
+%%                     pid(), integer())
+%%          -> {ok, reference()}|{error, term()}
 mapred_stream(Rhc, Inputs, Query, ClientPid, Timeout) ->
     Url = mapred_url(Rhc),
     StartRef = make_ref(),
-    Pid = spawn(rhc, mapred_acceptor, [ClientPid, StartRef]),
+    Pid = spawn(rhc_mapred, mapred_acceptor, [ClientPid, StartRef]),
     Headers = [{?HEAD_CTYPE, "application/json"}],
-    Body = encode_mapred(Inputs, Query),
+    Body = rhc_mapred:encode_mapred(Inputs, Query),
     case request_stream(Pid, post, Url, Headers, Body) of
         {ok, ReqId} ->
             Pid ! {ibrowse_req_id, StartRef, ReqId},
@@ -195,7 +207,7 @@ mapred_bucket(Rhc, Bucket, Query) ->
 
 mapred_bucket(Rhc, Bucket, Query, Timeout) ->
     {ok, ReqId} = mapred_bucket_stream(Rhc, Bucket, Query, self(), Timeout),
-    wait_for_mapred(ReqId, Timeout).
+    rhc_mapred:wait_for_mapred(ReqId, Timeout).
 
 mapred_bucket_stream(Rhc, Bucket, Query, ClientPid, Timeout) ->
     mapred_stream(Rhc, Bucket, Query, ClientPid, Timeout).
@@ -295,379 +307,9 @@ options_list([K|Rest], Options, Acc) ->
 options_list([], _, Acc) ->
     Acc.
 
-make_riakc_obj(Bucket, Key, Headers, Body) ->
-    Vclock = base64:decode(proplists:get_value(?HEAD_VCLOCK, Headers, "")),
-    case ctype_from_headers(Headers) of
-        {"multipart/mixed", Args} ->
-            {"boundary", Boundary} = proplists:lookup("boundary", Args),
-            riakc_obj:new_obj(
-              Bucket, Key, Vclock,
-              decode_siblings(Boundary, Body));
-        {_CType, _} ->
-            riakc_obj:new_obj(
-              Bucket, Key, Vclock,
-              [{headers_to_metadata(Headers), list_to_binary(Body)}])
-    end.
-
-ctype_from_headers(Headers) ->
-    mochiweb_util:parse_header(
-      proplists:get_value(?HEAD_CTYPE, Headers)).
-
-vtag_from_headers(Headers) ->
-    %% non-sibling uses ETag, sibling uses Etag
-    %% (note different capitalization on 't')
-    case proplists:lookup("ETag", Headers) of
-        {"ETag", ETag} -> ETag;
-        none -> proplists:get_value("Etag", Headers)
-    end.
-           
-
-lastmod_from_headers(Headers) ->
-    case proplists:get_value("Last-Modified", Headers) of
-        undefined ->
-            undefined;
-        RfcDate ->
-            GS = calendar:datetime_to_gregorian_seconds(
-                   httpd_util:convert_request_date(RfcDate)),
-            ES = GS-62167219200, %% gregorian seconds of the epoch
-            {ES div 1000000, % Megaseconds
-             ES rem 1000000, % Seconds
-             0}              % Microseconds
-    end.
-
-decode_siblings(Boundary, "\r\n"++SibBody) ->
-    decode_siblings(Boundary, SibBody);
-decode_siblings(Boundary, SibBody) ->
-    Parts = webmachine_multipart:get_all_parts(
-              list_to_binary(SibBody), Boundary),
-    [ {headers_to_metadata([ {binary_to_list(H), binary_to_list(V)}
-                             || {H, V} <- Headers ]),
-       element(1, split_binary(Body, size(Body)-2))} %% remove trailing \r\n
-      || {_, {_, Headers}, Body} <- Parts ].
-
-headers_to_metadata(Headers) ->
-    UserMeta = extract_user_metadata(Headers),
-
-    {CType,_} = ctype_from_headers(Headers),
-    CUserMeta = dict:store(?MD_CTYPE, CType, UserMeta),
-
-    VTag = vtag_from_headers(Headers),
-    VCUserMeta = dict:store(?MD_VTAG, VTag, CUserMeta),
-
-    LVCUserMeta = case lastmod_from_headers(Headers) of
-                      undefined ->
-                          VCUserMeta;
-                      LastMod ->
-                          dict:store(?MD_LASTMOD, LastMod, VCUserMeta)
-                  end,
-
-    case extract_links(Headers) of
-        [] -> LVCUserMeta;
-        Links -> dict:store(?MD_LINKS, Links, LVCUserMeta)
-    end.
-
-extract_user_metadata(_Headers) ->
-    %%TODO
-    dict:new().
-
-extract_links(Headers) ->
-    {ok, Re} = re:compile("</[^/]+/([^/]+)/([^/]+)>; *riaktag=\"(.*)\""),
-    Extractor = fun(L, Acc) ->
-                        case re:run(L, Re, [{capture,[1,2,3],binary}]) of
-                            {match, [Bucket, Key,Tag]} ->
-                                [{{Bucket,Key},Tag}|Acc];
-                            nomatch ->
-                                Acc
-                        end
-                end,
-    LinkHeader = proplists:get_value(?HEAD_LINK, Headers, []),
-    lists:foldl(Extractor, [], string:tokens(LinkHeader, ",")).
-
-serialize_riakc_obj(Rhc, Object) ->
-    {make_headers(Rhc, Object), make_body(Object)}.
-
-make_headers(Rhc, Object) ->
-    MD = riakc_obj:get_update_metadata(Object),
-    CType = case dict:find(?MD_CTYPE, MD) of
-                {ok, C} when is_list(C) -> C;
-                {ok, C} when is_binary(C) -> binary_to_list(C);
-                error -> "application/octet-stream"
-            end,
-    Links = case dict:find(?MD_LINKS, MD) of
-                {ok, L} -> L;
-                error   -> []
-            end,
-    VClock = riakc_obj:vclock(Object),
-    lists:flatten(
-      [{?HEAD_CTYPE, CType},
-       [ {?HEAD_LINK, encode_links(Rhc, Links)} || Links =/= [] ],
-       [ {?HEAD_VCLOCK, base64:encode_to_string(VClock)}
-         || VClock =/= undefined ]
-       | encode_user_metadata(MD) ]).
-
-encode_links(_, []) -> [];
-encode_links(#rhc{prefix=Prefix}, Links) ->
-    {{FirstBucket, FirstKey}, FirstTag} = hd(Links),
-    lists:foldl(
-      fun({{Bucket, Key}, Tag}, Acc) ->
-              [format_link(Prefix, Bucket, Key, Tag), ", "|Acc]
-      end,
-      format_link(Prefix, FirstBucket, FirstKey, FirstTag),
-      tl(Links)).
-
-encode_user_metadata(_Metadata) ->
-    %% TODO
-    [].
-
-format_link(Prefix, Bucket, Key, Tag) ->
-    io_lib:format("</~s/~s/~s>; riaktag=\"~s\"",
-                  [Prefix, Bucket, Key, Tag]).
-
-make_body(Object) ->
-    case riakc_obj:get_update_value(Object) of
-        Val when is_binary(Val) -> Val;
-        Val when is_list(Val) ->
-            case is_iolist(Val) of
-                true -> Val;
-                false -> term_to_binary(Val)
-            end;
-        Val ->
-            term_to_binary(Val)
-    end.
-
-is_iolist(Binary) when is_binary(Binary) -> true;
-is_iolist(List) when is_list(List) ->
-    lists:all(fun is_iolist/1, List);
-is_iolist(_) -> false.
-
-erlify_bucket_props(Props) ->
-    lists:flatten([ erlify_bucket_prop(K, V) || {K, V} <- Props ]).
-erlify_bucket_prop(?JSON_N_VAL, N) -> {n_val, N};
-erlify_bucket_prop(?JSON_ALLOW_MULT, AM) -> {allow_mult, AM};
-erlify_bucket_prop(_Ignore, _) -> [].
-
-httpify_bucket_props(Props) ->
-    lists:flatten([ httpify_bucket_prop(K, V) || {K, V} <- Props ]).
-httpify_bucket_prop(n_val, N) -> {?JSON_N_VAL, N};
-httpify_bucket_prop(allow_mult, AM) -> {?JSON_ALLOW_MULT, AM};
-httpify_bucket_prop(_Ignore, _) -> [].
-
 erlify_server_info(Props) ->
     lists:flatten([ erlify_server_info(K, V) || {K, V} <- Props ]).
 erlify_server_info(<<"nodename">>, Name) -> {node, Name};
 erlify_server_info(<<"riak_kv_version">>, Vsn) -> {server_version, Vsn};
 erlify_server_info(_Ignore, _) -> [].
 
-
-list_keys_acceptor(Pid, PidRef) ->
-    receive
-        {ibrowse_req_id, PidRef, IbrowseRef} ->
-            list_keys_acceptor(Pid,PidRef,IbrowseRef,[])
-    after ?DEFAULT_TIMEOUT ->
-            Pid ! {PidRef, {error, {timeout, []}}}
-    end.
-
-list_keys_acceptor(Pid,PidRef,IbrowseRef,Buffer) ->
-    receive
-        {ibrowse_async_response_end, IbrowseRef} ->
-            if Buffer =:= [] ->
-                    Pid ! {PidRef, done};
-               true ->
-                    Pid ! {PidRef, {error, {not_parseable, Buffer}}}
-            end;
-        {ibrowse_async_response, IbrowseRef, {error,Error}} ->
-            Pid ! {PidRef, {error, Error}};
-        {ibrowse_async_response, IbrowseRef, []} ->
-            %% ignore empty data
-            ibrowse:stream_next(IbrowseRef),
-            list_keys_acceptor(Pid,PidRef,IbrowseRef,Buffer);
-        {ibrowse_async_response, IbrowseRef, Data} ->
-            case catch mochijson2:decode([Buffer,Data]) of
-                {struct, Response} ->
-                    Keys = proplists:get_value(?JSON_KEYS, Response, []),
-                    Pid ! {PidRef, {keys, Keys}},
-                    ibrowse:stream_next(IbrowseRef),
-                    list_keys_acceptor(Pid,PidRef,IbrowseRef,[]);
-                {'EXIT', _} ->
-                    ibrowse:stream_next(IbrowseRef),
-                    list_keys_acceptor(Pid,PidRef,IbrowseRef,
-                                       [Buffer,Data])
-            end;
-        {ibrowse_async_headers, IbrowseRef, Status, Headers} ->
-            if Status =/= "200" ->
-                    Pid ! {PidRef, {error, {Status, Headers}}};
-               true ->
-                    ibrowse:stream_next(IbrowseRef),
-                    list_keys_acceptor(Pid,PidRef,IbrowseRef,Buffer)
-            end
-    after ?DEFAULT_TIMEOUT ->
-            Pid ! {PidRef, {error, timeout}}
-    end.
-
-%% @private
-wait_for_listkeys(ReqId, Timeout) ->
-    wait_for_listkeys(ReqId,Timeout,[]).
-%% @private
-wait_for_listkeys(ReqId,Timeout,Acc) ->
-    receive
-        {ReqId, done} -> {ok, lists:flatten(Acc)};
-        {ReqId, {keys,Res}} -> wait_for_listkeys(ReqId,Timeout,[Res|Acc]);
-        {ReqId, {error, Reason}} -> {error, Reason}
-    after Timeout ->
-            {error, {timeout, Acc}}
-    end.
-
-mapred_acceptor(Pid, PidRef) ->
-    receive
-        {ibrowse_req_id, PidRef, IbrowseRef} ->
-            mapred_acceptor(Pid,PidRef,IbrowseRef)
-    after ?DEFAULT_TIMEOUT ->
-            Pid ! {PidRef, {error, {timeout, []}}}
-    end.
-
-mapred_acceptor(Pid,PidRef,IbrowseRef) ->
-    receive
-        {ibrowse_async_headers, IbrowseRef, Status, Headers} ->
-            if Status =/= "200" ->
-                    Pid ! {PidRef, {error, {Status, Headers}}};
-               true ->
-                    {"multipart/mixed", Args} = ctype_from_headers(Headers),
-                    {"boundary", Boundary} =
-                        proplists:lookup("boundary", Args),
-                    stream_parts_acceptor(
-                      Pid, PidRef,
-                      webmachine_multipart:stream_parts(
-                        {[],stream_parts_helper(Pid,PidRef,IbrowseRef,true)},
-                        Boundary))
-            end
-    after ?DEFAULT_TIMEOUT ->
-            Pid ! {PidRef, {error, timeout}}
-    end.
-
-stream_parts_acceptor(Pid,PidRef,done_parts) ->
-    Pid ! {PidRef, done};
-stream_parts_acceptor(Pid,PidRef,{{_Name, _Param, Part},Next}) ->
-    {struct, Response} = mochijson2:decode(Part),
-    Phase = proplists:get_value(<<"phase">>, Response),
-    Res = proplists:get_value(<<"data">>, Response),
-    Pid ! {PidRef, {mapred, Phase, Res}},
-    stream_parts_acceptor(Pid,PidRef,Next()).
-
-
-stream_parts_helper(Pid, PidRef, IbrowseRef, First) ->              
-    fun() ->
-            ibrowse:stream_next(IbrowseRef),
-            receive
-                {ibrowse_async_response_end, IbrowseRef} ->
-                    {<<>>,done};
-                {ibrowse_async_response, IbrowseRef, {error, Error}} ->
-                    Pid ! {PidRef, {error, Error}},
-                    throw({error, {ibrowse, Error}});
-                {ibrowse_async_response, IbrowseRef, []} ->
-                    Fun = stream_parts_helper(Pid, PidRef, IbrowseRef, First),
-                    Fun();
-                {ibrowse_async_response, IbrowseRef, Data0} ->
-                    Data = if First ->
-                                   case Data0 of
-                                       "\n"++D -> D;
-                                       "\r\n"++D -> D;
-                                       _ -> Data0
-                                   end;
-                              true ->
-                                   Data0
-                           end,
-                    {list_to_binary(Data),
-                     stream_parts_helper(Pid, PidRef, IbrowseRef,false)}
-            after ?DEFAULT_TIMEOUT ->
-                    Pid ! {PidRef, {error, timeout}},
-                    throw({error, {ibrowse, timeout}})
-            end
-    end.
-
-%% @private
-wait_for_mapred(ReqId, Timeout) ->
-    wait_for_mapred(ReqId,Timeout,orddict:new()).
-%% @private
-wait_for_mapred(ReqId, Timeout, Acc) ->
-    receive
-        {ReqId, done} -> {ok, orddict:to_list(Acc)};
-        {ReqId, {mapred,Phase,Res}} ->
-            wait_for_mapred(ReqId,Timeout,orddict:append_list(Phase,Res,Acc));
-        {ReqId, {error, Reason}} -> {error, Reason}
-    after Timeout ->
-            {error, {timeout, orddict:to_list(Acc)}}
-    end.
-
-
-encode_mapred(Inputs, Query) ->
-    mochijson2:encode(
-      {struct, [{<<"inputs">>, encode_mapred_inputs(Inputs)},
-                {<<"query">>, encode_mapred_query(Query)}]}).
-
-encode_mapred_inputs(Bucket) when is_binary(Bucket) ->
-    Bucket;
-encode_mapred_inputs(Keylist) when is_list(Keylist) ->
-    [ normalize_mapred_input(I) || I <- Keylist ].
-
-normalize_mapred_input({Bucket, Key})
-  when is_binary(Bucket), is_binary(Key) ->
-    [Bucket, Key];
-normalize_mapred_input({{Bucket, Key}, KeyData})
-  when is_binary(Bucket), is_binary(Key) ->
-    [Bucket, Key, KeyData];
-normalize_mapred_input([Bucket, Key])
-  when is_binary(Bucket), is_binary(Key) ->
-    [Bucket, Key];
-normalize_mapred_input([Bucket, Key, KeyData])
-  when is_binary(Bucket), is_binary(Key) ->
-    [Bucket, Key, KeyData].
-
-encode_mapred_query(Query) when is_list(Query) ->
-    [ encode_mapred_phase(P) || P <- Query ].
-
-encode_mapred_phase({MR, Fundef, Arg, Keep}) when MR =:= map;
-                                                  MR =:= reduce ->
-    Type = if MR =:= map -> <<"map">>;
-              MR =:= reduce -> <<"reduce">>
-           end,
-    {Lang, Json} = case Fundef of
-                       {modfun, Mod, Fun} ->
-                           {<<"erlang">>,
-                            [{<<"module">>,
-                              list_to_binary(atom_to_list(Mod))},
-                             {<<"function">>,
-                              list_to_binary(atom_to_list(Fun))}]};
-                       {jsfun, Name} ->
-                           {<<"javascript">>,
-                            [{<<"name">>, Name}]};
-                       {jsanon, {Bucket, Key}} ->
-                           {<<"javascript">>,
-                            [{<<"bucket">>, Bucket},
-                             {<<"key">>, Key}]};
-                       {jsanon, Source} ->
-                           {<<"javascript">>,
-                            [{<<"source">>, Source}]}
-                   end,
-    {struct,
-     [{Type,
-       {struct, [{<<"language">>, Lang},
-                 {<<"arg">>, Arg},
-                 {<<"keep">>, Keep}
-                 |Json
-                ]}
-      }]};
-encode_mapred_phase({link, Bucket, Tag, Keep}) ->
-    {struct,
-     [{<<"link">>,
-       {struct, [{<<"bucket">>, if Bucket =:= '_' -> <<"_">>;
-                                   true           -> Bucket
-                                end},
-                 {<<"tag">>, if Tag =:= '_' -> <<"_">>;
-                                true        -> Tag
-                             end},
-                 {<<"keep">>, Keep}
-                 ]}
-       }]}.
-
-
-                           
