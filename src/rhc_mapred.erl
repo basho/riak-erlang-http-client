@@ -16,6 +16,14 @@
 %% @type bucket() = binary()
 %% @type key() = binary()
 %% @type tag() = binary()
+%% @type query_part() = {map, funspec(), binary(), boolean()}|
+%%                      {reduce, funspec(), binary(), boolean()}|
+%%                      {link, linkspec(), linkspec(), boolean()}
+%% @type funspec() = {modfun, atom(), atom()}|
+%%                   {jsfun, binary()}|
+%%                   {jsanon, {bucket(), key()}}|
+%%                   {jsanon, binary()}
+%% @type linkspec() = binary()|'_'
 encode_mapred(Inputs, Query) ->
     mochijson2:encode(
       {struct, [{<<"inputs">>, encode_mapred_inputs(Inputs)},

@@ -1,0 +1,131 @@
+@title The Riak Erlang HTTP Client (riakhttpc)
+@copyright 2010 Basho Technologies
+
+@doc The riakhttpc application includes modules that provide access to
+Riak's HTTP interface.  Included modules are:
+
+<dl>
+  <dt>{@link rhc}</dt>
+  <dd>The `rhc' module is the main interface for interacting
+  with this application.  It includes functions for creating clients,
+  and for performing gets, puts, map/reduces, and so on, using those
+  clients.  This should generally be the only module you need to learn
+  if you're not hacking on this application.</dd>
+
+  <dt>{@link rhc_obj}</dt>
+  <dd>The `rhc_obj' module provides utilities for transforming
+  HTTP responses into `riakc_obj' objects, and for transforming
+  those objects back into HTTP requests.  More information about
+  `riakc_obj' objects is available in the proctol-buffers-based
+  <a href="http://bitbucket.org/basho/riak-erlang-client">
+    riak-erlang-client</a> project.</dd>
+
+  <dt>{@link rhc_bucket}</dt>
+  <dd>The `rhc_bucket' module provides utilities for
+  translating bucket-level requests back and forth between HTTP and
+  Erlang formats.</dd>
+
+  <dt>{@link rhc_listkeys}</dt>
+  <dd>The `rhc_listkeys' module handles decoding of key list
+  responses.</dd>
+
+  <dt>{@link rhc_mapred}</dt>
+  <dd>The `rhc_mapred' module handles decoding of map/reduce
+  results.</dd>
+</dl>
+
+It is a goal of `riakhttpc' to provide API-compatible
+functionality with
+<a href="http://bitbucket.org/basho/riak-erlang-client">riakc</a>,
+the protocol buffers Riak Erlang client.  That is, the functions of
+the {@link rhc} module should take the same parameters and provide the
+same results as those sharing their name in the
+<a href="http://bitbucket.org/basho/riak-erlang-client/src/tip/src/riakc_pb_socket.erl">riak_pb_socket</a>
+module.  So, a call like:
+
+```
+  rhc:get(Client, <<"mybucket">>, <<"mykey">>).
+'''
+
+should give the same results as
+
+```
+  riakc_pb_socket:get(Client, <<"mybucket">>, <<"mykey">>).
+'''
+
+<h2>Basic Usage</h2>
+
+The basic pattern of use of the Riak Erlang HTTP client is:
+
+<h3>1. Create a client</h3>
+
+If you're connecting to the default Riak HTTP port on the local
+machine, creating a client is easy:
+
+```
+C = rhc:create().
+'''
+
+To connect to a remote machine, or a non-standard port:
+
+```
+IP = "10.0.0.42",
+Port = 80,
+Prefix = "riak",
+Options = []
+C = rhc:create(IP, Port, Prefix, Options).
+'''
+
+Test the connection with {@link rhc:ping/1}:
+
+```
+ok = rhc:ping(C).
+'''
+
+<h3>2. Make a new object</h3>
+
+Make new objects using the {@link //riakc/riakc_obj} module:
+
+```
+O = riakc_obj:new(<<"bucket">>, <<"key">>,
+                  <<"here is some data to store">>,
+                  <<"text/plain">>).
+'''
+
+<h3>3. Retrieving an object</h3>
+
+To read an object from Read, use {@link rhc:get/2}:
+
+```
+{ok, O1} = rhc:get(C, <<"bucket">>, <<"key">>).
+'''
+
+<h3>4. Modifying an object</h3>
+
+To change an object's value, use {@link //riakc/riakc_obj:update_value/2}:
+
+```
+O2 = riakc_obj:update_value(O1, <<"my new data">>).
+'''
+
+<h3>5. Storing an object</h3>
+
+To store an object to Riak, use {@link rhc:put/2}:
+
+```
+ok = rhc:put(C, O2).
+'''
+
+
+<h3>6. Map/reduce</h3>
+
+Execute map/reduce queries with {@link rhc:mapred/3}:
+
+```
+Q = [{map, {jsanon, <<"function(v) { return [v]; }">>}, <<>>, true}],
+{ok, Results} = rhc:mapred(C, [{<<"bucket">>, <<"key">>}], Q).
+'''
+
+More information about the options that can be passed to each of these
+functions, and also about the streaming versions of map/reduce
+queries, can be found in the documentation of the {@link rhc} module.

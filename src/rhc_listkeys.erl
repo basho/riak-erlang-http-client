@@ -11,7 +11,7 @@
 
 %% @doc Collect all keylist results, and provide them as one list
 %%      instead of streaming to a Pid.
-%% @spec wait_for_mapred(term(), integer()) ->
+%% @spec wait_for_listkeys(term(), integer()) ->
 %%            {ok, [key()]}|{error, term()}
 wait_for_listkeys(ReqId, Timeout) ->
     wait_for_listkeys(ReqId,Timeout,[]).
