@@ -422,7 +422,7 @@ request_stream(Pid, Method, Url, Headers) ->
     request_stream(Pid, Method, Url, Headers, []).
 request_stream(Pid, Method, Url, Headers, Body) ->
     case ibrowse:send_req(Url, Headers, Method, Body,
-                          [{stream_to, {Pid,once}},
+                          [{stream_to, Pid},
                            {response_format, binary}]) of
         {ibrowse_req_id, ReqId} ->
             {ok, ReqId};

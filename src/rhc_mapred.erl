@@ -190,7 +190,6 @@ stream_parts_acceptor(Pid,PidRef,{{_Name, _Param, Part},Next}) ->
 %%      an ibrowse message, and then returns it to the streamer for processing
 stream_parts_helper(Pid, PidRef, Timeout, IbrowseRef, First) ->              
     fun() ->
-            ibrowse:stream_next(IbrowseRef),
             receive
                 {ibrowse_async_response_end, IbrowseRef} ->
                     {<<>>,done};
