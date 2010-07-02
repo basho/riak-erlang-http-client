@@ -31,6 +31,12 @@
 -include("raw_http.hrl").
 -include("rhc.hrl").
 
+-record(parse_state, {buffer=[],    %% unused characters in reverse order
+                      brace=0,      %% depth of braces in current partial
+                      quote=false,  %% inside a quoted region?
+                      escape=false  %% last character was escape?
+                     }).
+
 %% @doc Collect all keylist results, and provide them as one list
 %%      instead of streaming to a Pid.
 %% @spec wait_for_listkeys(term(), integer()) ->
@@ -52,46 +58,88 @@ wait_for_listkeys(ReqId,Timeout,Acc) ->
 list_keys_acceptor(Pid, PidRef) ->
     receive
         {ibrowse_req_id, PidRef, IbrowseRef} ->
-            list_keys_acceptor(Pid,PidRef,IbrowseRef,[])
+            list_keys_acceptor(Pid,PidRef,IbrowseRef,#parse_state{})
     after ?DEFAULT_TIMEOUT ->
             Pid ! {PidRef, {error, {timeout, []}}}
     end.
 
 %% @doc main loop for ibrowse response handling - parses response and
 %%      sends messaged to client Pid
-list_keys_acceptor(Pid,PidRef,IbrowseRef,Buffer) ->
+list_keys_acceptor(Pid,PidRef,IbrowseRef,ParseState) ->
     receive
         {ibrowse_async_response_end, IbrowseRef} ->
-            if Buffer =:= [] ->
+            case is_empty(ParseState) of
+                true ->
                     Pid ! {PidRef, done};
-               true ->
-                    Pid ! {PidRef, {error, {not_parseable, Buffer}}}
+                false ->
+                    Pid ! {PidRef, {error,
+                                    {not_parseable,
+                                     ParseState#parse_state.buffer}}}
             end;
         {ibrowse_async_response, IbrowseRef, {error,Error}} ->
             Pid ! {PidRef, {error, Error}};
         {ibrowse_async_response, IbrowseRef, []} ->
             %% ignore empty data
             ibrowse:stream_next(IbrowseRef),
-            list_keys_acceptor(Pid,PidRef,IbrowseRef,Buffer);
+            list_keys_acceptor(Pid,PidRef,IbrowseRef,ParseState);
         {ibrowse_async_response, IbrowseRef, Data} ->
-            case catch mochijson2:decode([Buffer,Data]) of
-                {struct, Response} ->
-                    Keys = proplists:get_value(?JSON_KEYS, Response, []),
-                    Pid ! {PidRef, {keys, Keys}},
-                    ibrowse:stream_next(IbrowseRef),
-                    list_keys_acceptor(Pid,PidRef,IbrowseRef,[]);
-                {'EXIT', _} ->
-                    ibrowse:stream_next(IbrowseRef),
-                    list_keys_acceptor(Pid,PidRef,IbrowseRef,
-                                       [Buffer,Data])
-            end;
+            {Keys, NewParseState} = try_parse(Data, ParseState),
+            if Keys =/= [] -> Pid ! {PidRef, {keys, Keys}};
+               true        -> ok
+            end,
+            list_keys_acceptor(Pid, PidRef, IbrowseRef, NewParseState);
         {ibrowse_async_headers, IbrowseRef, Status, Headers} ->
             if Status =/= "200" ->
                     Pid ! {PidRef, {error, {Status, Headers}}};
                true ->
                     ibrowse:stream_next(IbrowseRef),
-                    list_keys_acceptor(Pid,PidRef,IbrowseRef,Buffer)
+                    list_keys_acceptor(Pid,PidRef,IbrowseRef,ParseState)
             end
     after ?DEFAULT_TIMEOUT ->
             Pid ! {PidRef, {error, timeout}}
     end.
+
+is_empty(#parse_state{buffer=[],brace=0,quote=false,escape=false}) ->
+    true;
+is_empty(#parse_state{}) ->
+    false.
+
+try_parse(Data, #parse_state{buffer=B, brace=D, quote=Q, escape=E}) ->
+    Parse = try_parse(binary_to_list(Data), B, D, Q, E),
+    {KeyLists, NewParseState} =
+        lists:foldl(
+          fun(Chunk, Acc) when is_list(Chunk), is_list(Acc) ->
+                  {struct, Props} =  mochijson2:decode(Chunk),
+                  Keys = proplists:get_value(<<"keys">>, Props, []),
+                  [Keys|Acc];
+             (PS=#parse_state{}, Acc) ->
+                  {Acc,PS}
+          end,
+          [],
+          Parse),
+    {lists:flatten(KeyLists), NewParseState}.
+
+try_parse([], B, D, Q, E) ->
+    [#parse_state{buffer=B, brace=D, quote=Q, escape=E}];
+try_parse([_|Rest],B,D,Q,true) ->
+    try_parse(Rest,B,D,Q,false);
+try_parse([92|Rest],B,D,Q,false) -> %% backslash
+    try_parse(Rest,B,D,Q,true);
+try_parse([34|Rest],B,D,Q,E) -> %% quote
+    try_parse(Rest,[34|B],D,not Q,E);
+try_parse([123|Rest],B,D,Q,E) -> %% open brace
+    if Q    -> try_parse(Rest,[123|B],D,Q,E);
+       true -> try_parse(Rest,[123|B],D+1,Q,E)
+    end;
+try_parse([125|Rest],B,D,Q,E) -> %% close brace
+    if Q    -> try_parse(Rest,B,D,Q,E);
+       true ->
+            if D == 1 -> %% end of a chunk
+                    [lists:reverse([125|B])
+                     |try_parse(Rest,[],0,Q,E)];
+               true ->
+                    try_parse(Rest,[125|B],D-1,Q,E)
+            end
+    end;
+try_parse([C|Rest],B,D,Q,E) ->
+    try_parse(Rest,[C|B],D,Q,E).
