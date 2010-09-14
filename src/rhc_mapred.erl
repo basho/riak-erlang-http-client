@@ -33,7 +33,8 @@
 
 %% @doc Translate erlang-term map/reduce query into JSON format.
 %% @spec encode_mapred(map_input(), [query_part()]) -> iolist()
-%% @type map_input() = bucket()|[key_spec()]
+%% @type map_input() = bucket()|[key_spec()]|
+%%                     {modfun, atom(), atom(), term()}
 %% @type key_spec() = {bucket(), key()}|{{bucket(), key()},tag()}
 %% @type bucket() = binary()
 %% @type key() = binary()
@@ -54,7 +55,11 @@ encode_mapred(Inputs, Query) ->
 encode_mapred_inputs(Bucket) when is_binary(Bucket) ->
     Bucket;
 encode_mapred_inputs(Keylist) when is_list(Keylist) ->
-    [ normalize_mapred_input(I) || I <- Keylist ].
+    [ normalize_mapred_input(I) || I <- Keylist ];
+encode_mapred_inputs({modfun, Module, Function, Options}) ->
+    {struct, [{<<"module">>, atom_to_binary(Module, utf8)},
+              {<<"function">>, atom_to_binary(Function, utf8)},
+              {<<"arg">>, Options}]}.
 
 %% @doc Normalize all bucket-key-data inputs to either
 %%        [Bucket, Key]
