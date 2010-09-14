@@ -46,6 +46,7 @@
 -define(JSON_JSKEY,    <<"key">>).
 -define(JSON_ALLOW_MULT, <<"allow_mult">>).
 -define(JSON_N_VAL,    <<"n_val">>).
+-define(JSON_PRECOMMIT, <<"precommit">>).
 
 
 %% Names of HTTP query parameters
