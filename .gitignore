@@ -1,0 +1,10 @@
+*.beam
+deps/*
+*~
+.DS_Store
+*.orig
+doc/*.html
+doc/edoc-info
+doc/erlang.png
+doc/stylesheet.css
+
