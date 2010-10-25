@@ -14,7 +14,7 @@
 
 %% Constants used by the raw_http resources
 %% original source at
-%% http://bitbucket.org/basho/riak/src/tip/apps/riak/src/raw_http.hrl
+%% http://github.com/basho/riak_kv/blob/master/src/riak_kv_wm_raw.hrl
 
 %% Names of riak_object metadata fields
 -define(MD_CTYPE,    <<"content-type">>).

@@ -17,7 +17,7 @@ Riak's HTTP interface.  Included modules are:
   HTTP responses into `riakc_obj' objects, and for transforming
   those objects back into HTTP requests.  More information about
   `riakc_obj' objects is available in the proctol-buffers-based
-  <a href="http://bitbucket.org/basho/riak-erlang-client">
+  <a href="http://github.com/basho/riak-erlang-client">
     riak-erlang-client</a> project.</dd>
 
   <dt>{@link rhc_bucket}</dt>
@@ -36,11 +36,11 @@ Riak's HTTP interface.  Included modules are:
 
 It is a goal of `riakhttpc' to provide API-compatible
 functionality with
-<a href="http://bitbucket.org/basho/riak-erlang-client">riakc</a>,
+<a href="http://github.com/basho/riak-erlang-client">riakc</a>,
 the protocol buffers Riak Erlang client.  That is, the functions of
 the {@link rhc} module should take the same parameters and provide the
 same results as those sharing their name in the
-<a href="http://bitbucket.org/basho/riak-erlang-client/src/tip/src/riakc_pb_socket.erl">riak_pb_socket</a>
+<a href="http://github.com/basho/riak-erlang-client/blob/master/src/riakc_pb_socket.erl">riak_pb_socket</a>
 module.  So, a call like:
 
 ```
