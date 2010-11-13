@@ -13,4 +13,4 @@ distclean: clean
 	@./rebar delete-deps
 
 doc:
-	erl -noshell -run edoc_run application riakhttpc '"."' '[]'
+	@./rebar doc skip_deps=true
