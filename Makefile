@@ -1,4 +1,4 @@
-.PHONY: rel deps
+.PHONY: rel deps doc
 
 all: deps
 	@./rebar compile
@@ -12,3 +12,5 @@ clean:
 distclean: clean
 	@./rebar delete-deps
 
+doc:
+	erl -noshell -run edoc_run application riakhttpc '"."' '[]'
