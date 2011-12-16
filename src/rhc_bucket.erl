@@ -34,6 +34,7 @@ erlify_props(Props) ->
 erlify_prop(?JSON_N_VAL, N) -> {n_val, N};
 erlify_prop(?JSON_ALLOW_MULT, AM) -> {allow_mult, AM};
 erlify_prop(?JSON_PRECOMMIT, P) -> {precommit, P};
+erlify_prop(?JSON_SEARCH, B) -> {search, B};
 erlify_prop(_Ignore, _) -> [].
 
 httpify_props(Props) ->
@@ -41,4 +42,5 @@ httpify_props(Props) ->
 httpify_prop(n_val, N) -> {?JSON_N_VAL, N};
 httpify_prop(allow_mult, AM) -> {?JSON_ALLOW_MULT, AM};
 httpify_prop(precommit, P) -> {?JSON_PRECOMMIT, P};
+httpify_prop(search, B) -> {?JSON_SEARCH, B};
 httpify_prop(_Ignore, _) -> [].
