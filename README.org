@@ -1,5 +1,7 @@
 * riak-erlang-http-client
 ** Overview
+   [[http://travis-ci.org/basho/riak-erlang-http-client][Travis-CI]] :: [[https://secure.travis-ci.org/basho/riak-erlang-http-client.png]]
+
 =riak-erlang-http-client= is an Erlang client for Riak, using the HTTP
 interface
 
