@@ -1,7 +1,7 @@
 {application, riakhttpc,
  [
   {description, "Riak HTTP Client"},
-  {vsn, "1.3.0"},
+  {vsn, "1.3.1"},
   {modules, [
              rhc,
              rhc_bucket,
