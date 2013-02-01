@@ -47,6 +47,7 @@
 -define(JSON_ALLOW_MULT, <<"allow_mult">>).
 -define(JSON_N_VAL,    <<"n_val">>).
 -define(JSON_PRECOMMIT, <<"precommit">>).
+-define(JSON_POSTCOMMIT, <<"postcommit">>).
 
 
 %% Names of HTTP query parameters
