@@ -48,6 +48,7 @@
 -define(JSON_N_VAL,    <<"n_val">>).
 -define(JSON_PRECOMMIT, <<"precommit">>).
 -define(JSON_SEARCH, <<"search">>).
+-define(JSON_POSTCOMMIT, <<"postcommit">>).
 
 
 %% Names of HTTP query parameters
