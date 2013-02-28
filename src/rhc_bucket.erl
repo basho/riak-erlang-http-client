@@ -61,12 +61,11 @@ erlify_quorum(?JSON_ONE) -> one;
 erlify_quorum(I) when is_integer(I) -> I;
 erlify_quorum(_) -> undefined.
 
-erlify_repl(?JSON_OFF) -> off;
 erlify_repl(?JSON_REALTIME) -> realtime;
 erlify_repl(?JSON_FULLSYNC) -> fullsync;
-erlify_repl(?JSON_BOTH) -> both;
-%% erlify_repl(true) -> both;
-%% erlify_repl(false) -> off;
+erlify_repl(?JSON_BOTH) -> true; %% both is equivalent to true, but only works in 1.2+
+erlify_repl(true) -> true;
+erlify_repl(false) -> false;
 erlify_repl(_) -> undefined.
 
 erlify_chash({struct, [{?JSON_MOD, Mod}, {?JSON_FUN, Fun}]}=Struct) ->

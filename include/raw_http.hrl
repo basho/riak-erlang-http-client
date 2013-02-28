@@ -77,7 +77,6 @@
 %% Valid 'repl' property values in JSON
 -define(JSON_BOTH,       <<"both">>).
 -define(JSON_FULLSYNC,   <<"fullsync">>).
--define(JSON_OFF,        <<"off">>).
 -define(JSON_REALTIME,   <<"realtime">>).
 
 %% MapReduce JSON fields
