@@ -43,7 +43,7 @@ erlify_prop(?JSON_NF_OK, NF) -> {notfound_ok, NF};
 erlify_prop(?JSON_N_VAL, N) -> {n_val, N};
 erlify_prop(?JSON_OLD_VC, I) -> {old_vclock, I};
 erlify_prop(?JSON_POSTCOMMIT, P) -> {postcommit, P};
-erlify_prop(?JSON_PR, PR) -> {dw, erlify_quorum(PR)};
+erlify_prop(?JSON_PR, PR) -> {pr, erlify_quorum(PR)};
 erlify_prop(?JSON_PRECOMMIT, P) -> {precommit, P};
 erlify_prop(?JSON_PW, PW) -> {pw, erlify_quorum(PW)};
 erlify_prop(?JSON_R, R) -> {r, erlify_quorum(R)};
