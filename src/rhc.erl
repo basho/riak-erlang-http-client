@@ -127,6 +127,8 @@ get(Rhc, Bucket, Key) ->
 %%      <dl>
 %%        <dt>`r'</dt>
 %%          <dd>The 'R' value to use for the read</dd>
+%%        <dt>`timeout'</dt>
+%%          <dd>The server-side timeout for the write in ms</dd>
 %%      </dl>
 %%
 %%      The term in the second position of the error tuple will be
@@ -157,6 +159,8 @@ put(Rhc, Object) ->
 %%          <dd>The 'W' value to use for the write</dd>
 %%        <dt>`dw'</dt>
 %%          <dd>The 'DW' value to use for the write</dd>
+%%        <dt>`timeout'</dt>
+%%          <dd>The server-side timeout for the write in ms</dd>
 %%        <dt>return_body</dt>
 %%          <dd>Whether or not to return the updated object in the
 %%          response.  `ok' is returned if return_body is false.
@@ -197,6 +201,8 @@ delete(Rhc, Bucket, Key) ->
 %%      <dl>
 %%        <dt>`rw'</dt>
 %%          <dd>The 'RW' value to use for the delete</dd>
+%%        <dt>`timeout'</dt>
+%%          <dd>The server-side timeout for the write in ms</dd>
 %%      </dl>
 %% @spec delete(rhc(), bucket(), key(), proplist()) -> ok|{error, term()}
 delete(Rhc, Bucket, Key, Options) ->
@@ -465,18 +471,18 @@ options(#rhc{options=Options}) ->
 %% @doc Extract the list of query parameters to use for a GET
 %% @spec get_q_params(rhc(), proplist()) -> proplist()
 get_q_params(Rhc, Options) ->
-    options_list([r], Options ++ options(Rhc)).
+    options_list([r,timeout], Options ++ options(Rhc)).
 
 %% @doc Extract the list of query parameters to use for a PUT
 %% @spec put_q_params(rhc(), proplist()) -> proplist()
 put_q_params(Rhc, Options) ->
-    options_list([r,w,dw,{return_body,"returnbody"}],
+    options_list([r,w,dw,timeout,{return_body,"returnbody"}],
                  Options ++ options(Rhc)).
 
 %% @doc Extract the list of query parameters to use for a DELETE
 %% @spec delete_q_params(rhc(), proplist()) -> proplist()
 delete_q_params(Rhc, Options) ->
-    options_list([r,rw], Options ++ options(Rhc)).
+    options_list([r,rw,timeout], Options ++ options(Rhc)).
 
 %% @doc Extract the options for the given `Keys' from the possible
 %%      list of `Options'.
