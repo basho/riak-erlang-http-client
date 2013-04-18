@@ -37,8 +37,13 @@
          put/2, put/3,
          delete/3, delete/4,
          list_buckets/1,
+         list_buckets/2,
+         stream_list_buckets/1,
+         stream_list_buckets/2,
          list_keys/2,
+         list_keys/3,
          stream_list_keys/2,
+         stream_list_keys/3,
          get_bucket/2,
          set_bucket/3,
          mapred/3,mapred/4,
@@ -214,16 +219,46 @@ delete(Rhc, Bucket, Key, Options) ->
         {error, Error}               -> {error, Error}
     end.
 
-%% @doc Unsupported
-%% @throws not_implemented    
-list_buckets(_Rhc) ->
-    throw(not_implemented).
+list_buckets(Rhc) ->
+    list_buckets(Rhc, undefined).
 
+list_buckets(Rhc, Timeout) ->
+    {ok, ReqId} = stream_list_buckets(Rhc, Timeout),
+    rhc_listkeys:wait_for_list(ReqId, Timeout).
+
+stream_list_buckets(Rhc) ->
+    stream_list_buckets(Rhc, undefined).
+
+stream_list_buckets(Rhc, Timeout) ->
+    ParamList0 = [{?Q_BUCKETS, ?Q_STREAM},
+                  {?Q_PROPS, ?Q_FALSE}],
+    ParamList = 
+        case Timeout of
+            undefined -> ParamList0;
+            N -> ParamList0 ++ [{?Q_TIMEOUT, N}]
+        end,
+    Url = make_url(Rhc, undefined, undefined, ParamList),
+    StartRef = make_ref(),
+    Pid = spawn(rhc_listkeys, list_acceptor, [self(), StartRef]),
+    case request_stream(Pid, get, Url) of
+        {ok, ReqId}    ->
+            Pid ! {ibrowse_req_id, StartRef, ReqId},
+            {ok, StartRef};
+        {error, Error} -> {error, Error}
+    end.
+
+list_keys(Rhc, Bucket) ->
+    list_keys(Rhc, Bucket, undefined).
+    
 %% @doc List the keys in the given bucket.
 %% @spec list_keys(rhc(), bucket()) -> {ok, [key()]}|{error, term()}
-list_keys(Rhc, Bucket) ->
-    {ok, ReqId} = stream_list_keys(Rhc, Bucket),
-    rhc_listkeys:wait_for_listkeys(ReqId, ?DEFAULT_TIMEOUT).
+
+list_keys(Rhc, Bucket, Timeout) ->
+    {ok, ReqId} = stream_list_keys(Rhc, Bucket, Timeout),
+    rhc_listkeys:wait_for_list(ReqId, ?DEFAULT_TIMEOUT).
+
+stream_list_keys(Rhc, Bucket) ->
+    stream_list_keys(Rhc, Bucket, undefined).
 
 %% @doc Stream key lists to a Pid.  Messages sent to the Pid will
 %%      be of the form `{reference(), message()}'
@@ -238,11 +273,17 @@ list_keys(Rhc, Bucket) ->
 %%      </dl>
 %% @spec stream_list_keys(rhc(), bucket()) ->
 %%          {ok, reference()}|{error, term()}
-stream_list_keys(Rhc, Bucket) ->
-    Url = make_url(Rhc, Bucket, undefined, [{?Q_KEYS, ?Q_STREAM},
-                                            {?Q_PROPS, ?Q_FALSE}]),
+stream_list_keys(Rhc, Bucket, Timeout) ->
+    ParamList0 = [{?Q_KEYS, ?Q_STREAM},
+                  {?Q_PROPS, ?Q_FALSE}],
+    ParamList = 
+        case Timeout of
+            undefined -> ParamList0;
+            N -> ParamList0 ++ [{?Q_TIMEOUT, N}]
+        end,
+    Url = make_url(Rhc, Bucket, undefined, ParamList),
     StartRef = make_ref(),
-    Pid = spawn(rhc_listkeys, list_keys_acceptor, [self(), StartRef]),
+    Pid = spawn(rhc_listkeys, list_acceptor, [self(), StartRef]),
     case request_stream(Pid, get, Url) of
         {ok, ReqId}    ->
             Pid ! {ibrowse_req_id, StartRef, ReqId},
@@ -425,7 +466,7 @@ make_url(Rhc=#rhc{prefix=Prefix}, Bucket, Key, Query) ->
       iolist_to_binary(
         [root_url(Rhc),
          Prefix, "/",
-         Bucket, "/",
+         [ [Bucket,"/"] || Bucket =/= undefined ],
          [ [Key,"/"] || Key =/= undefined ],
          [ ["?", mochiweb_util:urlencode(Query)] || Query =/= [] ]
         ])).

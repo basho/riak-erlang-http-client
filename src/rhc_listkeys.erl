@@ -24,9 +24,9 @@
 %%      parse list_keys request results.
 -module(rhc_listkeys).
 
--export([wait_for_listkeys/2]).
+-export([wait_for_list/2]).
 %% spawnable exports
--export([list_keys_acceptor/2]).
+-export([list_acceptor/2]).
 
 -include("raw_http.hrl").
 -include("rhc.hrl").
@@ -39,33 +39,32 @@
 
 %% @doc Collect all keylist results, and provide them as one list
 %%      instead of streaming to a Pid.
-%% @spec wait_for_listkeys(term(), integer()) ->
+%% @spec wait_for_list(term(), integer()) ->
 %%            {ok, [key()]}|{error, term()}
-wait_for_listkeys(ReqId, Timeout) ->
-    wait_for_listkeys(ReqId,Timeout,[]).
+wait_for_list(ReqId, Timeout) ->
+    wait_for_list(ReqId,Timeout,[]).
 %% @private
-wait_for_listkeys(ReqId,Timeout,Acc) ->
+wait_for_list(ReqId, _Timeout0, Acc) ->
     receive
-        {ReqId, done} -> {ok, lists:flatten(Acc)};
-        {ReqId, {keys,Res}} -> wait_for_listkeys(ReqId,Timeout,[Res|Acc]);
-        {ReqId, {error, Reason}} -> {error, Reason}
-    after Timeout ->
-            {error, {timeout, Acc}}
+        {ReqId, done} -> 
+            {ok, lists:flatten(Acc)};
+        {ReqId, {error, Reason}} -> 
+            {error, Reason};
+        {ReqId, {_,Res}} -> 
+            wait_for_list(ReqId,_Timeout0,[Res|Acc])
     end.
 
 %% @doc first stage of ibrowse response handling - just waits to be
 %%      told what ibrowse request ID to expect
-list_keys_acceptor(Pid, PidRef) ->
+list_acceptor(Pid, PidRef) ->
     receive
         {ibrowse_req_id, PidRef, IbrowseRef} ->
-            list_keys_acceptor(Pid,PidRef,IbrowseRef,#parse_state{})
-    after ?DEFAULT_TIMEOUT ->
-            Pid ! {PidRef, {error, {timeout, []}}}
+            list_acceptor(Pid,PidRef,IbrowseRef,#parse_state{})
     end.
 
 %% @doc main loop for ibrowse response handling - parses response and
 %%      sends messaged to client Pid
-list_keys_acceptor(Pid,PidRef,IbrowseRef,ParseState) ->
+list_acceptor(Pid,PidRef,IbrowseRef,ParseState) ->
     receive
         {ibrowse_async_response_end, IbrowseRef} ->
             case is_empty(ParseState) of
@@ -81,22 +80,25 @@ list_keys_acceptor(Pid,PidRef,IbrowseRef,ParseState) ->
         {ibrowse_async_response, IbrowseRef, []} ->
             %% ignore empty data
             ibrowse:stream_next(IbrowseRef),
-            list_keys_acceptor(Pid,PidRef,IbrowseRef,ParseState);
+            list_acceptor(Pid,PidRef,IbrowseRef,ParseState);
         {ibrowse_async_response, IbrowseRef, Data} ->
-            {Keys, NewParseState} = try_parse(Data, ParseState),
-            if Keys =/= [] -> Pid ! {PidRef, {keys, Keys}};
-               true        -> ok
-            end,
-            list_keys_acceptor(Pid, PidRef, IbrowseRef, NewParseState);
+                try
+                    {Keys, NewParseState} = try_parse(Data, ParseState),
+                    if Keys =/= [] -> Pid ! {PidRef, {keys, Keys}};
+                       true        -> ok
+                    end,
+                    list_acceptor(Pid, PidRef, IbrowseRef, NewParseState)
+                catch
+                    Error ->
+                        Pid ! {PidRef, {error, Error}}
+                end;
         {ibrowse_async_headers, IbrowseRef, Status, Headers} ->
             if Status =/= "200" ->
                     Pid ! {PidRef, {error, {Status, Headers}}};
                true ->
                     ibrowse:stream_next(IbrowseRef),
-                    list_keys_acceptor(Pid,PidRef,IbrowseRef,ParseState)
+                    list_acceptor(Pid,PidRef,IbrowseRef,ParseState)
             end
-    after ?DEFAULT_TIMEOUT ->
-            Pid ! {PidRef, {error, timeout}}
     end.
 
 is_empty(#parse_state{buffer=[],brace=0,quote=false,escape=false}) ->
@@ -110,8 +112,22 @@ try_parse(Data, #parse_state{buffer=B, brace=D, quote=Q, escape=E}) ->
         lists:foldl(
           fun(Chunk, Acc) when is_list(Chunk), is_list(Acc) ->
                   {struct, Props} =  mochijson2:decode(Chunk),
-                  Keys = proplists:get_value(<<"keys">>, Props, []),
-                  [Keys|Acc];
+                  Keys = 
+                      case proplists:get_value(<<"keys">>, Props, []) of
+                          [] -> 
+                              proplists:get_value(<<"buckets">>, 
+                                                  Props, []);
+                          K -> K
+                      end,
+                  case Keys of
+                      [] -> 
+                          %%check for a timeout error
+                          case proplists:get_value(<<"error">>, Props, []) of
+                              [] -> Acc;
+                              Err -> throw(Err)
+                          end;
+                      _ -> [Keys|Acc]
+                  end;
              (PS=#parse_state{}, Acc) ->
                   {Acc,PS}
           end,
