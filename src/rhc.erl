@@ -471,18 +471,18 @@ options(#rhc{options=Options}) ->
 %% @doc Extract the list of query parameters to use for a GET
 %% @spec get_q_params(rhc(), proplist()) -> proplist()
 get_q_params(Rhc, Options) ->
-    options_list([r,timeout], Options ++ options(Rhc)).
+    options_list([r,pr,timeout], Options ++ options(Rhc)).
 
 %% @doc Extract the list of query parameters to use for a PUT
 %% @spec put_q_params(rhc(), proplist()) -> proplist()
 put_q_params(Rhc, Options) ->
-    options_list([r,w,dw,timeout,{return_body,"returnbody"}],
+    options_list([r,w,dw,pr,pw,timeout,asis,{return_body,"returnbody"}],
                  Options ++ options(Rhc)).
 
 %% @doc Extract the list of query parameters to use for a DELETE
 %% @spec delete_q_params(rhc(), proplist()) -> proplist()
 delete_q_params(Rhc, Options) ->
-    options_list([r,rw,timeout], Options ++ options(Rhc)).
+    options_list([r,w,dw,pr,pw,rw,timeout], Options ++ options(Rhc)).
 
 %% @doc Extract the options for the given `Keys' from the possible
 %%      list of `Options'.
