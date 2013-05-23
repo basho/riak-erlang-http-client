@@ -26,7 +26,7 @@
 
 -export([wait_for_list/2]).
 %% spawnable exports
--export([list_acceptor/2]).
+-export([list_acceptor/3]).
 
 -include("raw_http.hrl").
 -include("rhc.hrl").
@@ -56,15 +56,15 @@ wait_for_list(ReqId, _Timeout0, Acc) ->
 
 %% @doc first stage of ibrowse response handling - just waits to be
 %%      told what ibrowse request ID to expect
-list_acceptor(Pid, PidRef) ->
+list_acceptor(Pid, PidRef, Type) ->
     receive
         {ibrowse_req_id, PidRef, IbrowseRef} ->
-            list_acceptor(Pid,PidRef,IbrowseRef,#parse_state{})
+            list_acceptor(Pid,PidRef,IbrowseRef,#parse_state{},Type)
     end.
 
 %% @doc main loop for ibrowse response handling - parses response and
 %%      sends messaged to client Pid
-list_acceptor(Pid,PidRef,IbrowseRef,ParseState) ->
+list_acceptor(Pid,PidRef,IbrowseRef,ParseState,Type) ->
     receive
         {ibrowse_async_response_end, IbrowseRef} ->
             case is_empty(ParseState) of
@@ -80,14 +80,14 @@ list_acceptor(Pid,PidRef,IbrowseRef,ParseState) ->
         {ibrowse_async_response, IbrowseRef, []} ->
             %% ignore empty data
             ibrowse:stream_next(IbrowseRef),
-            list_acceptor(Pid,PidRef,IbrowseRef,ParseState);
+            list_acceptor(Pid,PidRef,IbrowseRef,ParseState,Type);
         {ibrowse_async_response, IbrowseRef, Data} ->
                 try
                     {Keys, NewParseState} = try_parse(Data, ParseState),
-                    if Keys =/= [] -> Pid ! {PidRef, {keys, Keys}};
+                    if Keys =/= [] -> Pid ! {PidRef, {Type, Keys}};
                        true        -> ok
                     end,
-                    list_acceptor(Pid, PidRef, IbrowseRef, NewParseState)
+                    list_acceptor(Pid, PidRef, IbrowseRef, NewParseState,Type)
                 catch
                     Error ->
                         Pid ! {PidRef, {error, Error}}
@@ -97,7 +97,7 @@ list_acceptor(Pid,PidRef,IbrowseRef,ParseState) ->
                     Pid ! {PidRef, {error, {Status, Headers}}};
                true ->
                     ibrowse:stream_next(IbrowseRef),
-                    list_acceptor(Pid,PidRef,IbrowseRef,ParseState)
+                    list_acceptor(Pid,PidRef,IbrowseRef,ParseState,Type)
             end
     end.
 

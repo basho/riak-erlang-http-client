@@ -239,7 +239,7 @@ stream_list_buckets(Rhc, Timeout) ->
         end,
     Url = make_url(Rhc, undefined, undefined, ParamList),
     StartRef = make_ref(),
-    Pid = spawn(rhc_listkeys, list_acceptor, [self(), StartRef]),
+    Pid = spawn(rhc_listkeys, list_acceptor, [self(), StartRef, buckets]),
     case request_stream(Pid, get, Url) of
         {ok, ReqId}    ->
             Pid ! {ibrowse_req_id, StartRef, ReqId},
@@ -283,7 +283,7 @@ stream_list_keys(Rhc, Bucket, Timeout) ->
         end,
     Url = make_url(Rhc, Bucket, undefined, ParamList),
     StartRef = make_ref(),
-    Pid = spawn(rhc_listkeys, list_acceptor, [self(), StartRef]),
+    Pid = spawn(rhc_listkeys, list_acceptor, [self(), StartRef, keys]),
     case request_stream(Pid, get, Url) of
         {ok, ReqId}    ->
             Pid ! {ibrowse_req_id, StartRef, ReqId},
