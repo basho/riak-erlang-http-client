@@ -50,10 +50,14 @@
          mapred_stream/4, mapred_stream/5,
          mapred_bucket/3, mapred_bucket/4,
          mapred_bucket_stream/5,
-         search/3, search/5]).
+         search/3, search/5,
+         counter_incr/4, counter_incr/5,
+         counter_val/3, counter_val/4]).
 
 -include("raw_http.hrl").
 -include("rhc.hrl").
+
+-opaque rhc() :: #rhc{}.
 
 %% @doc Create a client for connecting to the default port on localhost.
 %% @equiv create("127.0.0.1", 8098, "riak", [])
@@ -192,6 +196,84 @@ put(Rhc, Object, Options) ->
                     {ok, rhc_obj:make_riakc_obj(Bucket, Key,
                                                 ReplyHeaders, ReplyBody)}
             end;
+        {error, Error} ->
+            {error, Error}
+    end.
+
+%% @doc Increment the counter stored under `bucket', `key'
+%%      by the given `amount'.
+%% @equiv counter_incr(rhc(), binary(), binary(), integer(), []).
+-spec counter_incr(rhc(), binary(), binary(), integer()) -> ok | {ok, integer()}
+                                                                | {error, term()}.
+counter_incr(Rhc, Bucket, Key, Amt) ->
+    counter_incr(Rhc, Bucket, Key, Amt, []).
+
+%% @doc Increment the counter stored at `bucket', `key' by
+%%      `Amt'. Note: `Amt' can be a negative or positive integer.
+%%
+%%      Allowed options are:
+%%      <dl>
+%%        <dt>`w'</dt>
+%%          <dd>The 'W' value to use for the write</dd>
+%%        <dt>`dw'</dt>
+%%          <dd>The 'DW' value to use for the write</dd
+%%        <dt>`pw'</dt>
+%%          <dd>The 'PW' value to use for the write</dd>
+%%        <dt>`timeout'</dt>
+%%          <dd>The server-side timeout for the write in ms</dd>
+%%        <dt>`returnvalue'</dt>
+%%          <dd>Whether or not to return the updated value in the
+%%          response. `ok' is returned if returnvalue is absent | `false'.
+%%          `{ok, integer()}' is returned if returnvalue is `true'.</dd>
+%%      </dl>
+%% @see the riak docs at http://docs.basho.com/riak/latest/references/apis/http/ for details
+-spec counter_incr(rhc(), binary(), binary(), integer(), list()) -> ok | {ok, integer()}
+                                                                        | {error, term()}.
+counter_incr(Rhc, Bucket, Key, Amt, Options) ->
+    Qs = counter_q_params(Rhc, Options),
+    Url = make_counter_url(Rhc, Bucket, Key, Qs),
+    Body = integer_to_list(Amt),
+    case request(post, Url, ["200", "204"], [], Body) of
+        {ok, Status, _ReplyHeaders, ReplyBody} ->
+            if Status =:= "204" ->
+                    ok;
+               true ->
+                    {ok, list_to_integer(binary_to_list(ReplyBody))}
+            end;
+        {error, Error} ->
+            {error, Error}
+    end.
+
+%% @doc Get the counter stored at `bucket', `key'.
+-spec counter_val(rhc(), term(), term()) -> {ok, integer()} | {error, term()}.
+counter_val(_, _, _) ->
+    ok.
+
+%% @doc Get the counter stored at `bucket', `key'.
+%%
+%%      Allowed options are:
+%%      <dl>
+%%        <dt>`r'</dt>
+%%          <dd>The 'R' value to use for the read</dd>
+%%        <dt>`pr'</dt>
+%%          <dd>The 'PR' value to use for the read</dd
+%%        <dt>`pw'</dt>
+%%          <dd>The 'PW' value to use for the write</dd>
+%%        <dt>`timeout'</dt>
+%%          <dd>The server-side timeout for the write in ms</dd>
+%%        <dt>`notfound_ok'</dt>
+%%          <dd>if `true' not_found replies from vnodes count toward read quorum.<//dd>
+%%        <dt>`basic_quorum'</dt>
+%%          <dd>When set to `true' riak will return a value as soon as it gets a quorum of responses.</dd>
+%%      </dl>
+%% @see the riak docs at http://docs.basho.com/riak/latest/references/apis/http/ fro details
+-spec counter_val(rhc(), term(), term(), list()) -> {ok, integer()} | {error, term()}.
+counter_val(Rhc, Bucket, Key, Options) ->
+    Qs = counter_q_params(Rhc, Options),
+    Url = make_counter_url(Rhc, Bucket, Key, Qs),
+    case request(get, Url, ["200"], [], []) of
+        {ok, "200", _ReplyHeaders, ReplyBody} ->
+            {ok, list_to_integer(binary_to_list(ReplyBody))};
         {error, Error} ->
             {error, Error}
     end.
@@ -471,6 +553,16 @@ make_url(Rhc=#rhc{prefix=Prefix}, Bucket, Key, Query) ->
          [ ["?", mochiweb_util:urlencode(Query)] || Query =/= [] ]
         ])).
 
+%% @doc Generate a counter url.
+-spec make_counter_url(rhc(), term(), term(), list()) -> iolist().
+make_counter_url(Rhc, Bucket, Key, Query) ->
+    binary_to_list(
+      iolist_to_binary(
+        [root_url(Rhc),
+         <<"buckets">>, "/", Bucket, "/", <<"counters">>, "/", Key, "?",
+         [ [mochiweb_util:urlencode(Query)] || Query =/= []]])).
+
+
 %% @doc send an ibrowse request
 request(Method, Url, Expect) ->
     request(Method, Url, Expect, [], []).
@@ -519,6 +611,12 @@ get_q_params(Rhc, Options) ->
 put_q_params(Rhc, Options) ->
     options_list([r,w,dw,pr,pw,timeout,asis,{return_body,"returnbody"}],
                  Options ++ options(Rhc)).
+
+%% @doc Extract the list of query parameters to use for a
+%% counter increment
+-spec counter_q_params(rhc(), list()) -> list().
+counter_q_params(Rhc, Options) ->
+    options_list([r, pr, w, pw, dw, returnvalue, basic_quorum, notfound_ok], Options ++ options(Rhc)).
 
 %% @doc Extract the list of query parameters to use for a DELETE
 %% @spec delete_q_params(rhc(), proplist()) -> proplist()
