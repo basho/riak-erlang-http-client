@@ -246,8 +246,8 @@ counter_incr(Rhc, Bucket, Key, Amt, Options) ->
 
 %% @doc Get the counter stored at `bucket', `key'.
 -spec counter_val(rhc(), term(), term()) -> {ok, integer()} | {error, term()}.
-counter_val(_, _, _) ->
-    ok.
+counter_val(Rhc, Bucket, Key) ->
+    counter_val(Rhc, Bucket, Key, []).
 
 %% @doc Get the counter stored at `bucket', `key'.
 %%
