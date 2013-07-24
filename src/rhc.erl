@@ -680,7 +680,7 @@ get_auth_header(Options) ->
 get_ssl_options(Options) ->
     case proplists:get_value(is_ssl, Options) of
         true ->
-            [{is_ssl, true}] ++ case proplists:get_value(ssl_options, []) of
+            [{is_ssl, true}] ++ case proplists:get_value(ssl_options, Options, []) of
                 X when is_list(X) ->
                     [{ssl_options, X}];
                 _ ->
