@@ -33,6 +33,7 @@
          ping/1,
          get_client_id/1,
          get_server_info/1,
+         get_server_stats/1,
          get/3, get/4,
          put/2, put/3,
          delete/3, delete/4,
@@ -122,6 +123,19 @@ get_server_info(Rhc) ->
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {ok, erlify_server_info(Response)};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+%% @doc Get the list of full stats from a /stats call to the server.
+%% @spec get_server_info(rhc()) -> {ok, proplist()}|{error, term()}
+get_server_stats(Rhc) ->
+    Url = stats_url(Rhc),
+    case request(get, Url, ["200"]) of
+        {ok, _Status, _Headers, Body} ->
+            {struct, Response} = mochijson2:decode(Body),
+            Stats = lists:flatten(Response),
+            {ok, Stats};
         {error, Error} ->
             {error, Error}
     end.
