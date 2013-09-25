@@ -131,7 +131,7 @@ get_server_info(Rhc) ->
 %% @spec get_server_info(rhc()) -> {ok, proplist()}|{error, term()}
 get_server_stats(Rhc) ->
     Url = stats_url(Rhc),
-    case request(get, Url, ["200"]) of
+    case request(get, Url, ["200"], [], [], Rhc) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             Stats = lists:flatten(Response),
