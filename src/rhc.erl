@@ -102,7 +102,7 @@ prefix(#rhc{prefix=Prefix}) -> Prefix.
 %% @spec ping(rhc()) -> ok|{error, term()}
 ping(Rhc) ->
     Url = ping_url(Rhc),
-    case request(get, Url, ["200","204"]) of
+    case request(get, Url, ["200","204"], [], [], Rhc) of
         {ok, _Status, _Headers, _Body} ->
             ok;
         {error, Error} ->
@@ -119,7 +119,7 @@ get_client_id(Rhc) ->
 %% @spec get_server_info(rhc()) -> {ok, proplist()}|{error, term()}
 get_server_info(Rhc) ->
     Url = stats_url(Rhc),
-    case request(get, Url, ["200"]) of
+    case request(get, Url, ["200"], [], [], Rhc) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {ok, erlify_server_info(Response)};
@@ -131,7 +131,7 @@ get_server_info(Rhc) ->
 %% @spec get_server_info(rhc()) -> {ok, proplist()}|{error, term()}
 get_server_stats(Rhc) ->
     Url = stats_url(Rhc),
-    case request(get, Url, ["200"]) of
+    case request(get, Url, ["200"], [], [], Rhc) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             Stats = lists:flatten(Response),
@@ -161,7 +161,7 @@ get(Rhc, Bucket, Key) ->
 get(Rhc, Bucket, Key, Options) ->
     Qs = get_q_params(Rhc, Options),
     Url = make_url(Rhc, Bucket, Key, Qs),
-    case request(get, Url, ["200", "300"]) of
+    case request(get, Url, ["200", "300"], [], [], Rhc) of
         {ok, _Status, Headers, Body} ->
             {ok, rhc_obj:make_riakc_obj(Bucket, Key, Headers, Body)};
         {error, {ok, "404", _, _}} ->
@@ -202,7 +202,7 @@ put(Rhc, Object, Options) ->
     {Headers0, Body} = rhc_obj:serialize_riakc_obj(Rhc, Object),
     Headers = [{?HEAD_CLIENT, client_id(Rhc, Options)}
                |Headers0],
-    case request(Method, Url, ["200", "204", "300"], Headers, Body) of
+    case request(Method, Url, ["200", "204", "300"], Headers, Body, Rhc) of
         {ok, Status, ReplyHeaders, ReplyBody} ->
             if Status =:= "204" ->
                     ok;
@@ -247,7 +247,7 @@ counter_incr(Rhc, Bucket, Key, Amt, Options) ->
     Qs = counter_q_params(Rhc, Options),
     Url = make_counter_url(Rhc, Bucket, Key, Qs),
     Body = integer_to_list(Amt),
-    case request(post, Url, ["200", "204"], [], Body) of
+    case request(post, Url, ["200", "204"], [], Body, Rhc) of
         {ok, Status, _ReplyHeaders, ReplyBody} ->
             if Status =:= "204" ->
                     ok;
@@ -285,7 +285,7 @@ counter_val(Rhc, Bucket, Key) ->
 counter_val(Rhc, Bucket, Key, Options) ->
     Qs = counter_q_params(Rhc, Options),
     Url = make_counter_url(Rhc, Bucket, Key, Qs),
-    case request(get, Url, ["200"], [], []) of
+    case request(get, Url, ["200"], [], [], Rhc) of
         {ok, "200", _ReplyHeaders, ReplyBody} ->
             {ok, list_to_integer(binary_to_list(ReplyBody))};
         {error, Error} ->
@@ -310,7 +310,7 @@ delete(Rhc, Bucket, Key, Options) ->
     Qs = delete_q_params(Rhc, Options),
     Url = make_url(Rhc, Bucket, Key, Qs),
     Headers = [{?HEAD_CLIENT, client_id(Rhc, Options)}],
-    case request(delete, Url, ["204"], Headers) of
+    case request(delete, Url, ["204"], Headers, [], Rhc) of
         {ok, "204", _Headers, _Body} -> ok;
         {error, Error}               -> {error, Error}
     end.
@@ -336,7 +336,7 @@ stream_list_buckets(Rhc, Timeout) ->
     Url = make_url(Rhc, undefined, undefined, ParamList),
     StartRef = make_ref(),
     Pid = spawn(rhc_listkeys, list_acceptor, [self(), StartRef, buckets]),
-    case request_stream(Pid, get, Url) of
+    case request_stream(Pid, get, Url, [], [], Rhc) of
         {ok, ReqId}    ->
             Pid ! {ibrowse_req_id, StartRef, ReqId},
             {ok, StartRef};
@@ -380,7 +380,7 @@ stream_list_keys(Rhc, Bucket, Timeout) ->
     Url = make_url(Rhc, Bucket, undefined, ParamList),
     StartRef = make_ref(),
     Pid = spawn(rhc_listkeys, list_acceptor, [self(), StartRef, keys]),
-    case request_stream(Pid, get, Url) of
+    case request_stream(Pid, get, Url, [], [], Rhc) of
         {ok, ReqId}    ->
             Pid ! {ibrowse_req_id, StartRef, ReqId},
             {ok, StartRef};
@@ -391,7 +391,7 @@ stream_list_keys(Rhc, Bucket, Timeout) ->
 %% @spec get_bucket(rhc(), bucket()) -> {ok, proplist()}|{error, term()}
 get_bucket(Rhc, Bucket) ->
     Url = make_url(Rhc, Bucket, undefined, [{?Q_KEYS, ?Q_FALSE}]),
-    case request(get, Url, ["200"]) of
+    case request(get, Url, ["200"], [], [], Rhc) of
         {ok, "200", _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {struct, Props} = proplists:get_value(?JSON_PROPS, Response),
@@ -416,7 +416,7 @@ set_bucket(Rhc, Bucket, Props0) ->
     Headers =  [{"Content-Type", "application/json"}],
     Props = rhc_bucket:httpify_props(Props0),
     Body = mochijson2:encode({struct, [{?Q_PROPS, {struct, Props}}]}),
-    case request(put, Url, ["204"], Headers, Body) of
+    case request(put, Url, ["204"], Headers, Body, Rhc) of
         {ok, "204", _Headers, _Body} -> ok;
         {error, Error}               -> {error, Error}
     end.
@@ -461,7 +461,7 @@ mapred_stream(Rhc, Inputs, Query, ClientPid, Timeout) ->
     Pid = spawn(rhc_mapred, mapred_acceptor, [ClientPid, StartRef, Timeout]),
     Headers = [{?HEAD_CTYPE, "application/json"}],
     Body = rhc_mapred:encode_mapred(Inputs, Query),
-    case request_stream(Pid, post, Url, Headers, Body) of
+    case request_stream(Pid, post, Url, Headers, Body, Rhc) of
         {ok, ReqId} ->
             Pid ! {ibrowse_req_id, StartRef, ReqId},
             {ok, StartRef};
@@ -537,8 +537,14 @@ random_client_id() ->
 
 %% @doc Assemble the root URL for the given client
 %% @spec root_url(rhc()) -> iolist()
-root_url(#rhc{ip=Ip, port=Port}) ->
-    ["http://",Ip,":",integer_to_list(Port),"/"].
+root_url(#rhc{ip=Ip, port=Port, options=Opts}) ->
+    Proto = case proplists:get_value(is_ssl, Opts) of
+        true ->
+            "https";
+        _ ->
+            "http"
+    end,
+    [Proto, "://",Ip,":",integer_to_list(Port),"/"].
 
 %% @doc Assemble the URL for the map/reduce resource
 %% @spec mapred_url(rhc()) -> iolist()
@@ -578,14 +584,12 @@ make_counter_url(Rhc, Bucket, Key, Query) ->
 
 
 %% @doc send an ibrowse request
-request(Method, Url, Expect) ->
-    request(Method, Url, Expect, [], []).
-request(Method, Url, Expect, Headers) ->
-    request(Method, Url, Expect, Headers, []).
-request(Method, Url, Expect, Headers, Body) ->
+request(Method, Url, Expect, Headers, Body, Rhc) ->
+    AuthHeader = get_auth_header(Rhc#rhc.options),
+    SSLOptions = get_ssl_options(Rhc#rhc.options),
     Accept = {"Accept", "multipart/mixed, */*;q=0.9"},
-    case ibrowse:send_req(Url, [Accept|Headers], Method, Body,
-                          [{response_format, binary}]) of
+    case ibrowse:send_req(Url, [Accept|Headers] ++ AuthHeader, Method, Body,
+                          [{response_format, binary}] ++ SSLOptions) of
         Resp={ok, Status, _, _} ->
             case lists:member(Status, Expect) of
                 true -> Resp;
@@ -596,14 +600,12 @@ request(Method, Url, Expect, Headers, Body) ->
     end.
 
 %% @doc stream an ibrowse request
-request_stream(Pid, Method, Url) ->
-    request_stream(Pid, Method, Url, []).
-request_stream(Pid, Method, Url, Headers) ->
-    request_stream(Pid, Method, Url, Headers, []).
-request_stream(Pid, Method, Url, Headers, Body) ->
-    case ibrowse:send_req(Url, Headers, Method, Body,
+request_stream(Pid, Method, Url, Headers, Body, Rhc) ->
+    AuthHeader = get_auth_header(Rhc#rhc.options),
+    SSLOptions = get_ssl_options(Rhc#rhc.options),
+    case ibrowse:send_req(Url, Headers ++ AuthHeader, Method, Body,
                           [{stream_to, Pid},
-                           {response_format, binary}]) of
+                           {response_format, binary}] ++ SSLOptions) of
         {ibrowse_req_id, ReqId} ->
             {ok, ReqId};
         Error ->
@@ -665,3 +667,25 @@ erlify_server_info(<<"nodename">>, Name) -> {node, Name};
 erlify_server_info(<<"riak_kv_version">>, Vsn) -> {server_version, Vsn};
 erlify_server_info(_Ignore, _) -> [].
 
+get_auth_header(Options) ->
+    case lists:keyfind(credentials, 1, Options) of
+        {credentials, User, Password} ->
+            [{"Authorization", "Basic " ++ base64:encode_to_string(User ++ ":"
+                                                                  ++
+                                                                  Password)}];
+        _ ->
+            []
+    end.
+
+get_ssl_options(Options) ->
+    case proplists:get_value(is_ssl, Options) of
+        true ->
+            [{is_ssl, true}] ++ case proplists:get_value(ssl_options, Options, []) of
+                X when is_list(X) ->
+                    [{ssl_options, X}];
+                _ ->
+                    [{ssl_options, []}]
+            end;
+        _ ->
+            []
+    end.
