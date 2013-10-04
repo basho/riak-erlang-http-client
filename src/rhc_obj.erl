@@ -58,7 +58,7 @@ vtag_from_headers(Headers) ->
         {"ETag", ETag} -> ETag;
         none -> proplists:get_value("Etag", Headers)
     end.
-           
+
 
 lastmod_from_headers(Headers) ->
     case proplists:get_value("Last-Modified", Headers) of
@@ -99,14 +99,21 @@ headers_to_metadata(Headers) ->
                           dict:store(?MD_LASTMOD, LastMod, VCUserMeta)
                   end,
 
-    case extract_links(Headers) of
+    LinkMeta = case extract_links(Headers) of
         [] -> LVCUserMeta;
         Links -> dict:store(?MD_LINKS, Links, LVCUserMeta)
+    end,
+    case extract_indexes(Headers) of
+        [] -> LinkMeta;
+        Entries -> dict:store(?MD_INDEX, Entries, LinkMeta)
     end.
 
-extract_user_metadata(_Headers) ->
-    %%TODO
-    dict:new().
+extract_user_metadata(Headers) ->
+    lists:foldl(fun extract_user_metadata/2, dict:new(), Headers).
+
+extract_user_metadata({?HEAD_USERMETA_PREFIX++K, V}, Dict) ->
+    riakc_obj:set_user_metadata_entry(Dict, {K, V});
+extract_user_metadata(_, D) -> D.
 
 extract_links(Headers) ->
     {ok, Re} = re:compile("</[^/]+/([^/]+)/([^/]+)>; *riaktag=\"(.*)\""),
@@ -121,6 +128,16 @@ extract_links(Headers) ->
     LinkHeader = proplists:get_value(?HEAD_LINK, Headers, []),
     lists:foldl(Extractor, [], string:tokens(LinkHeader, ",")).
 
+extract_indexes(Headers) ->
+    [ {list_to_binary(K), decode_index_value(K,V)} || {?HEAD_INDEX_PREFIX++K, V} <- Headers].
+
+decode_index_value(K, V) ->
+    case lists:last(string:tokens(K, "_")) of
+        "bin" ->
+            list_to_binary(V);
+        "int" ->
+            list_to_integer(V)
+    end.
 
 %% riakc_obj -> HTTP
 
@@ -143,7 +160,8 @@ make_headers(Rhc, Object) ->
       [{?HEAD_CTYPE, CType},
        [ {?HEAD_LINK, encode_links(Rhc, Links)} || Links =/= [] ],
        [ {?HEAD_VCLOCK, base64:encode_to_string(VClock)}
-         || VClock =/= undefined ]
+         || VClock =/= undefined ],
+       encode_indexes(MD)
        | encode_user_metadata(MD) ]).
 
 encode_links(_, []) -> [];
@@ -159,6 +177,22 @@ encode_links(#rhc{prefix=Prefix}, Links) ->
 encode_user_metadata(_Metadata) ->
     %% TODO
     [].
+
+encode_indexes(MD) ->
+    case dict:find(?MD_INDEX, MD) of
+        {ok, Entries} ->
+            [ encode_index(Pair) || {_,_}=Pair <- Entries];
+        error ->
+            []
+    end.
+
+encode_index({Name, IntValue}) when is_integer(IntValue) ->
+    encode_index({Name, integer_to_list(IntValue)});
+encode_index({Name, BinValue}) when is_binary(BinValue) ->
+    encode_index({Name, unicode:characters_to_list(BinValue, latin1)});
+encode_index({Name, String}) when is_list(String) ->
+    {?HEAD_INDEX_PREFIX ++ unicode:characters_to_list(Name, latin1),
+     String}.
 
 format_link(Prefix, Bucket, Key, Tag) ->
     io_lib:format("</~s/~s/~s>; riaktag=\"~s\"",

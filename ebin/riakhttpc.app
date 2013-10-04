@@ -6,6 +6,7 @@
              rhc,
              rhc_bucket,
              rhc_listkeys,
+             rhc_index,
              rhc_mapred,
              rhc_obj
             ]},

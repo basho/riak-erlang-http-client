@@ -36,7 +36,7 @@
          get_server_stats/1,
          get/3, get/4,
          put/2, put/3,
-         delete/3, delete/4,
+         delete/3, delete/4, delete_obj/2, delete_obj/3,
          list_buckets/1,
          list_buckets/2,
          stream_list_buckets/1,
@@ -45,8 +45,14 @@
          list_keys/3,
          stream_list_keys/2,
          stream_list_keys/3,
+         get_index/4, get_index/5,
+         stream_index/4, stream_index/5,
          get_bucket/2,
          set_bucket/3,
+         reset_bucket/2,
+         get_bucket_type/2,
+         set_bucket_type/3,
+         reset_bucket_type/2,
          mapred/3,mapred/4,
          mapred_stream/4, mapred_stream/5,
          mapred_bucket/3, mapred_bucket/4,
@@ -58,6 +64,7 @@
 -include("raw_http.hrl").
 -include("rhc.hrl").
 
+-export_type([rhc/0]).
 -opaque rhc() :: #rhc{}.
 
 %% @doc Create a client for connecting to the default port on localhost.
@@ -309,31 +316,55 @@ delete(Rhc, Bucket, Key) ->
 delete(Rhc, Bucket, Key, Options) ->
     Qs = delete_q_params(Rhc, Options),
     Url = make_url(Rhc, Bucket, Key, Qs),
-    Headers = [{?HEAD_CLIENT, client_id(Rhc, Options)}],
+    Headers0 = case lists:keyfind(vclock, 1, Options) of
+                   false -> [];
+                   {vclock, V} ->
+                       [{?HEAD_VCLOCK, base64:encode_to_string(V)}]
+               end,
+    Headers = [{?HEAD_CLIENT, client_id(Rhc, Options)}|Headers0],
     case request(delete, Url, ["204"], Headers, [], Rhc) of
         {ok, "204", _Headers, _Body} -> ok;
         {error, Error}               -> {error, Error}
     end.
 
+delete_obj(Rhc, Obj) ->
+    delete_obj(Rhc, Obj, []).
+
+delete_obj(Rhc, Obj, Options) ->
+    Bucket = riakc_obj:bucket(Obj),
+    Key = riakc_obj:key(Obj),
+    VClock = riakc_obj:vclock(Obj),
+    delete(Rhc, Bucket, Key, [{vclock, VClock}|Options]).
+
 list_buckets(Rhc) ->
     list_buckets(Rhc, undefined).
 
+list_buckets(Rhc, BucketType) when is_binary(BucketType) ->
+    list_buckets(Rhc, BucketType, undefined);
 list_buckets(Rhc, Timeout) ->
-    {ok, ReqId} = stream_list_buckets(Rhc, Timeout),
+    list_buckets(Rhc, undefined, Timeout).
+
+list_buckets(Rhc, BucketType, Timeout) ->
+    {ok, ReqId} = stream_list_buckets(Rhc, BucketType, Timeout),
     rhc_listkeys:wait_for_list(ReqId, Timeout).
 
 stream_list_buckets(Rhc) ->
     stream_list_buckets(Rhc, undefined).
 
+stream_list_buckets(Rhc, BucketType) when is_binary(BucketType) ->
+    stream_list_buckets(Rhc, BucketType, undefined);
 stream_list_buckets(Rhc, Timeout) ->
+    stream_list_buckets(Rhc, undefined, Timeout).
+
+stream_list_buckets(Rhc, BucketType, Timeout) ->
     ParamList0 = [{?Q_BUCKETS, ?Q_STREAM},
                   {?Q_PROPS, ?Q_FALSE}],
-    ParamList = 
+    ParamList =
         case Timeout of
             undefined -> ParamList0;
             N -> ParamList0 ++ [{?Q_TIMEOUT, N}]
         end,
-    Url = make_url(Rhc, undefined, undefined, ParamList),
+    Url = make_url(Rhc, {BucketType, undefined}, undefined, ParamList),
     StartRef = make_ref(),
     Pid = spawn(rhc_listkeys, list_acceptor, [self(), StartRef, buckets]),
     case request_stream(Pid, get, Url, [], [], Rhc) of
@@ -345,7 +376,7 @@ stream_list_buckets(Rhc, Timeout) ->
 
 list_keys(Rhc, Bucket) ->
     list_keys(Rhc, Bucket, undefined).
-    
+
 %% @doc List the keys in the given bucket.
 %% @spec list_keys(rhc(), bucket()) -> {ok, [key()]}|{error, term()}
 
@@ -372,7 +403,7 @@ stream_list_keys(Rhc, Bucket) ->
 stream_list_keys(Rhc, Bucket, Timeout) ->
     ParamList0 = [{?Q_KEYS, ?Q_STREAM},
                   {?Q_PROPS, ?Q_FALSE}],
-    ParamList = 
+    ParamList =
         case Timeout of
             undefined -> ParamList0;
             N -> ParamList0 ++ [{?Q_TIMEOUT, N}]
@@ -387,10 +418,46 @@ stream_list_keys(Rhc, Bucket, Timeout) ->
         {error, Error} -> {error, Error}
     end.
 
+%% @doc Query a secondary index.
+%% @spec get_index(rhc(), bucket(), index(), index_query()) ->
+%%    {ok, index_results()} | {error, term()}
+get_index(Rhc, Bucket, Index, Query) ->
+    get_index(Rhc, Bucket, Index, Query, []).
+
+%% @doc Query a secondary index.
+%% @spec get_index(rhc(), bucket(), index(), index_query(), index_options()) ->
+%%    {ok, index_results()} | {error, term()}
+get_index(Rhc, Bucket, Index, Query, Options) ->
+    {ok, ReqId} = stream_index(Rhc, Bucket, Index, Query, Options),
+    rhc_index:wait_for_index(ReqId).
+
+%% @doc Query a secondary index, streaming the results back.
+%% @spec stream_index(rhc(), bucket(), index(), index_query()) ->
+%%    {ok, reference()} | {error, term()}
+stream_index(Rhc, Bucket, Index, Query) ->
+    stream_index(Rhc, Bucket, Index, Query, []).
+
+%% @doc Query a secondary index, streaming the results back.
+%% @spec stream_index(rhc(), bucket(), index(), index_query(), index_options()) ->
+%%    {ok, reference()} | {error, term()}
+stream_index(Rhc, Bucket, Index, Query, Options) ->
+    ParamList = rhc_index:query_options([{stream, true}|Options]),
+    Url = index_url(Rhc, Bucket, Index, Query, ParamList),
+    StartRef = make_ref(),
+    Pid = spawn(rhc_index, index_acceptor, [self(), StartRef]),
+    case request_stream(Pid, get, Url, [], [], Rhc) of
+        {ok, ReqId} ->
+            Pid ! {ibrowse_req_id, StartRef, ReqId},
+            {ok, StartRef};
+        {error, Error} ->
+            {error, Error}
+    end.
+
 %% @doc Get the properties of the given bucket.
 %% @spec get_bucket(rhc(), bucket()) -> {ok, proplist()}|{error, term()}
 get_bucket(Rhc, Bucket) ->
-    Url = make_url(Rhc, Bucket, undefined, [{?Q_KEYS, ?Q_FALSE}]),
+    Url = make_url(Rhc, Bucket, undefined, [{?Q_PROPS, ?Q_TRUE},
+                                            {?Q_KEYS, ?Q_FALSE}]),
     case request(get, Url, ["200"], [], [], Rhc) of
         {ok, "200", _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
@@ -412,11 +479,53 @@ get_bucket(Rhc, Bucket) ->
 %%      </dl>
 %% @spec set_bucket(rhc(), bucket(), proplist()) -> ok|{error, term()}
 set_bucket(Rhc, Bucket, Props0) ->
-    Url = make_url(Rhc, Bucket, undefined, []),
+    Url = make_url(Rhc, Bucket, undefined, [{?Q_PROPS, ?Q_TRUE}]),
     Headers =  [{"Content-Type", "application/json"}],
     Props = rhc_bucket:httpify_props(Props0),
     Body = mochijson2:encode({struct, [{?Q_PROPS, {struct, Props}}]}),
     case request(put, Url, ["204"], Headers, Body, Rhc) of
+        {ok, "204", _Headers, _Body} -> ok;
+        {error, Error}               -> {error, Error}
+    end.
+
+reset_bucket(Rhc, Bucket) ->
+    Url = make_url(Rhc, Bucket, undefined, [{?Q_PROPS, ?Q_TRUE}]),
+    case request(delete, Url, ["204"], [], [], Rhc) of
+        {ok, "204", _Headers, _Body} -> ok;
+        {error, Error}               -> {error, Error}
+    end.
+
+
+%% @doc Get the properties of the given bucket.
+%% @spec get_bucket(rhc(), bucket()) -> {ok, proplist()}|{error, term()}
+get_bucket_type(Rhc, Type) ->
+    Url = make_url(Rhc, {Type, undefined}, undefined, [{?Q_PROPS, ?Q_TRUE},
+                                            {?Q_KEYS, ?Q_FALSE}]),
+    case request(get, Url, ["200"], [], [], Rhc) of
+        {ok, "200", _Headers, Body} ->
+            {struct, Response} = mochijson2:decode(Body),
+            {struct, Props} = proplists:get_value(?JSON_PROPS, Response),
+            {ok, rhc_bucket:erlify_props(Props)};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+%% @doc Set the properties of the given bucket type.
+%%
+%% @spec set_bucket(rhc(), bucket(), proplist()) -> ok|{error, term()}
+set_bucket_type(Rhc, Type, Props0) ->
+    Url = make_url(Rhc, {Type, undefined}, undefined, [{?Q_PROPS, ?Q_TRUE}]),
+    Headers =  [{"Content-Type", "application/json"}],
+    Props = rhc_bucket:httpify_props(Props0),
+    Body = mochijson2:encode({struct, [{?Q_PROPS, {struct, Props}}]}),
+    case request(put, Url, ["204"], Headers, Body, Rhc) of
+        {ok, "204", _Headers, _Body} -> ok;
+        {error, Error}               -> {error, Error}
+    end.
+
+reset_bucket_type(Rhc, Type) ->
+    Url = make_url(Rhc, {Type, undefined}, undefined, [{?Q_PROPS, ?Q_TRUE}]),
+    case request(delete, Url, ["204"], [], [], Rhc) of
         {ok, "204", _Headers, _Body} -> ok;
         {error, Error}               -> {error, Error}
     end.
@@ -468,16 +577,16 @@ mapred_stream(Rhc, Inputs, Query, ClientPid, Timeout) ->
         {error, Error} -> {error, Error}
     end.
 
-%% @doc Execute a search query. This command will return an error 
+%% @doc Execute a search query. This command will return an error
 %%      unless executed against a Riak Search cluster.
-%% @spec search(rhc(), bucket(), string()) -> 
+%% @spec search(rhc(), bucket(), string()) ->
 %%       {ok, [rhc_mapred:phase_result()]}|{error, term()}
 search(Rhc, Bucket, SearchQuery) ->
     %% Run a Map/Reduce operation using reduce_identity to get a list
     %% of BKeys.
     IdentityQuery = [{reduce, {modfun, riak_kv_mapreduce, reduce_identity}, none, true}],
     case search(Rhc, Bucket, SearchQuery, IdentityQuery, ?DEFAULT_TIMEOUT) of
-        {ok, [{_, Results}]} -> 
+        {ok, [{_, Results}]} ->
             %% Unwrap the results.
             {ok, Results};
         Other -> Other
@@ -485,9 +594,9 @@ search(Rhc, Bucket, SearchQuery) ->
 
 %% @doc Execute a search query and feed the results into a map/reduce
 %%      query. See {@link rhc_mapred:encode_mapred/2} for details of
-%%      the allowed formats for `MRQuery'. This command will return an error 
+%%      the allowed formats for `MRQuery'. This command will return an error
 %%      unless executed against a Riak Search cluster.
-%% @spec search(rhc(), bucket(), string(), 
+%% @spec search(rhc(), bucket(), string(),
 %%       [rhc_mapred:query_part()], integer()) ->
 %%       {ok, [rhc_mapred:phase_result()]}|{error, term()}
 search(Rhc, Bucket, SearchQuery, MRQuery, Timeout) ->
@@ -560,18 +669,56 @@ ping_url(Rhc) ->
 %% @spec stats_url(rhc()) -> iolist()
 stats_url(Rhc) ->
     binary_to_list(iolist_to_binary([root_url(Rhc), "stats/"])).
-    
+
+%% @doc Assemble the URL for the 2I resource
+index_url(Rhc, BucketAndType, Index, Query, Params) ->
+    {Type, Bucket} = extract_bucket_type(BucketAndType),
+    QuerySegments = index_query_segments(Query),
+    IndexName = index_name(Index),
+    unicode:characters_to_list(
+      [root_url(Rhc),
+       [ ["types", "/", Type, "/"] || Type =/= undefined ],
+       "buckets", "/", Bucket, "/", "index", "/", IndexName,
+       [ [ "/", QS] || QS <- QuerySegments ],
+       [ ["?", mochiweb_util:urlencode(Params)] || Params =/= []]]).
+
+
+index_query_segments(B) when is_binary(B) ->
+    [ B ];
+index_query_segments(I) when is_integer(I) ->
+    [ integer_to_list(I) ];
+index_query_segments({B1, B2}) when is_binary(B1),
+                                    is_binary(B2)->
+    [ B1, B2 ];
+index_query_segments({I1, I2}) when is_integer(I1),
+                                    is_integer(I2) ->
+    [ I1, I2 ];
+index_query_segments(_) -> [].
+
+index_name({binary_index, B}) ->
+    [B, "_bin"];
+index_name({integer_index, I}) ->
+    [I, "_int"];
+index_name(Idx) -> Idx.
+
+
+
 %% @doc Assemble the URL for the given bucket and key
 %% @spec make_url(rhc(), bucket(), key(), proplist()) -> iolist()
-make_url(Rhc=#rhc{prefix=Prefix}, Bucket, Key, Query) ->
-    binary_to_list(
-      iolist_to_binary(
+make_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
+    {Type, Bucket} = extract_bucket_type(BucketAndType),
+    {IsKeys, IsProps, IsBuckets} = detect_bucket_flags(Query),
+    unicode:characters_to_list(
         [root_url(Rhc),
-         Prefix, "/",
-         [ [Bucket,"/"] || Bucket =/= undefined ],
-         [ [Key,"/"] || Key =/= undefined ],
+         [ [ "types", "/", Type, "/"] || Type =/= undefined ],
+         %% Prefix, "/",
+         [ [ "buckets" ] || IsBuckets ],
+         [ ["buckets", "/", Bucket,"/"] || Bucket =/= undefined ],
+         [ [ "keys" ] || IsKeys ],
+         [ [ "props" ] || IsProps ],
+         [ ["keys", "/", Key,"/"] || Key =/= undefined andalso not IsKeys andalso not IsProps ],
          [ ["?", mochiweb_util:urlencode(Query)] || Query =/= [] ]
-        ])).
+        ]).
 
 %% @doc Generate a counter url.
 -spec make_counter_url(rhc(), term(), term(), list()) -> iolist().
@@ -689,3 +836,15 @@ get_ssl_options(Options) ->
         _ ->
             []
     end.
+
+extract_bucket_type({<<"default">>, B}) ->
+    {undefined, B};
+extract_bucket_type({T,B}) ->
+    {T,B};
+extract_bucket_type(B) ->
+    {undefined, B}.
+
+detect_bucket_flags(Query) ->
+    {proplists:get_value(?Q_KEYS, Query, ?Q_FALSE) =/= ?Q_FALSE,
+     proplists:get_value(?Q_PROPS, Query, ?Q_FALSE) =/= ?Q_FALSE,
+     proplists:get_value(?Q_BUCKETS, Query, ?Q_FALSE) =/= ?Q_FALSE}.
