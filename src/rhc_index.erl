@@ -67,17 +67,17 @@ wait_for_index(ReqId, Acc) ->
     end.
 
 collect_results(Acc, Continuation) ->
-    lists:foldr(fun merge_index_results/2,
+    lists:foldl(fun merge_index_results/2,
                 ?INDEX_RESULTS{keys=[],
                                terms=[],
                                continuation=Continuation}, Acc).
 
 merge_index_results(?INDEX_STREAM_RESULT{keys=KL},
                     ?INDEX_RESULTS{keys=K0}=Acc) when is_list(KL) ->
-    Acc?INDEX_RESULTS{keys=K0++KL};
+    Acc?INDEX_RESULTS{keys=KL++K0};
 merge_index_results(?INDEX_STREAM_RESULT{terms=TL},
                     ?INDEX_RESULTS{terms=T0}=Acc) when is_list(TL) ->
-    Acc?INDEX_RESULTS{terms=T0++TL}.
+    Acc?INDEX_RESULTS{terms=TL++T0}.
 
 index_acceptor(Pid, PidRef) ->
     receive
