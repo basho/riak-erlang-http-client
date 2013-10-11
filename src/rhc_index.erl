@@ -110,14 +110,18 @@ stream_parts_acceptor(Pid, PidRef, {{_Name, _Param, Part},Next}) ->
     Keys = proplists:get_value(<<"keys">>, Response),
     Results = proplists:get_value(<<"results">>, Response),
     Continuation = proplists:get_value(<<"continuation">>, Response),
-    Pid ! {PidRef, ?INDEX_STREAM_RESULT{keys=Keys,
-                                        terms=Results}},
-    if Continuation =/= undefined ->
-            Pid ! {PidRef, {done, Continuation}};
-       true ->
-            ok
-    end,
+    maybe_send_results(Pid, PidRef, Keys, Results),
+    maybe_send_continuation(Pid, PidRef, Continuation),
     stream_parts_acceptor(Pid, PidRef, Next()).
+
+maybe_send_results(_Pid, _PidRef, undefined, undefined) -> ok;
+maybe_send_results(Pid, PidRef, Keys, Results) ->
+    Pid ! {PidRef, ?INDEX_STREAM_RESULT{keys=Keys,
+                                        terms=Results}}.
+
+maybe_send_continuation(_Pid, _PidRef, undefined) -> ok;
+maybe_send_continuation(Pid, PidRef, Continuation) ->
+            Pid ! {PidRef, {done, Continuation}}.
 
 %% @doc "next" fun for the webmachine_multipart streamer - waits for
 %%      an ibrowse message, and then returns it to the streamer for processing

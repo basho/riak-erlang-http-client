@@ -692,7 +692,7 @@ index_query_segments({B1, B2}) when is_binary(B1),
     [ B1, B2 ];
 index_query_segments({I1, I2}) when is_integer(I1),
                                     is_integer(I2) ->
-    [ I1, I2 ];
+    [ integer_to_list(I1), integer_to_list(I2) ];
 index_query_segments(_) -> [].
 
 index_name({binary_index, B}) ->
