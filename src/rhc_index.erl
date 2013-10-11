@@ -74,10 +74,10 @@ collect_results(Acc, Continuation) ->
 
 merge_index_results(?INDEX_STREAM_RESULT{keys=KL},
                     ?INDEX_RESULTS{keys=K0}=Acc) when is_list(KL) ->
-    Acc?INDEX_RESULTS{keys=KL++K0};
+    Acc?INDEX_RESULTS{keys=K0++KL};
 merge_index_results(?INDEX_STREAM_RESULT{terms=TL},
                     ?INDEX_RESULTS{terms=T0}=Acc) when is_list(TL) ->
-    Acc?INDEX_RESULTS{terms=TL++T0}.
+    Acc?INDEX_RESULTS{terms=T0++TL}.
 
 index_acceptor(Pid, PidRef) ->
     receive
