@@ -29,6 +29,7 @@
 %% spawnable exports
 -export([mapred_acceptor/3]).
 
+
 %%% REQUEST ENCODING
 
 %% @doc Translate erlang-term map/reduce query into JSON format.
@@ -51,11 +52,22 @@ encode_mapred(Inputs, Query) ->
     mochijson2:encode(
       {struct, [{<<"inputs">>, encode_mapred_inputs(Inputs)},
                 {<<"query">>, encode_mapred_query(Query)}]}).
-
+encode_mapred_inputs({BucketType, Bucket}) when is_binary(BucketType),
+                                                is_binary(Bucket) ->
+    [BucketType, Bucket];
 encode_mapred_inputs(Bucket) when is_binary(Bucket) ->
     Bucket;
 encode_mapred_inputs(Keylist) when is_list(Keylist) ->
     [ normalize_mapred_input(I) || I <- Keylist ];
+encode_mapred_inputs({index, Bucket, Index, Key}) ->
+    {struct, [{<<"bucket">>, encode_mapred_inputs(Bucket)},
+              {<<"index">>, riakc_obj:index_id_to_bin(Index)},
+              {<<"key">>, Key}]};
+encode_mapred_inputs({index, Bucket, Index, StartKey, EndKey}) ->
+    {struct, [{<<"bucket">>, encode_mapred_inputs(Bucket)},
+              {<<"index">>, riakc_obj:index_id_to_bin(Index)},
+              {<<"start">>, StartKey},
+              {<<"end">>, EndKey}]};
 encode_mapred_inputs({modfun, Module, Function, Options}) ->
     {struct, [{<<"module">>, atom_to_binary(Module, utf8)},
               {<<"function">>, atom_to_binary(Function, utf8)},
@@ -68,9 +80,15 @@ encode_mapred_inputs({modfun, Module, Function, Options}) ->
 normalize_mapred_input({Bucket, Key})
   when is_binary(Bucket), is_binary(Key) ->
     [Bucket, Key];
+normalize_mapred_input({{{Type, Bucket}, Key}, KeyData})
+    when is_binary(Type), is_binary(Bucket), is_binary(Key) ->
+    [Type, Bucket, Key, KeyData];
 normalize_mapred_input({{Bucket, Key}, KeyData})
   when is_binary(Bucket), is_binary(Key) ->
     [Bucket, Key, KeyData];
+normalize_mapred_input([Type, Bucket, Key, _KeyData]=List)
+    when is_binary(Type), is_binary(Bucket), is_binary(Key) ->
+    List;
 normalize_mapred_input([Bucket, Key])
   when is_binary(Bucket), is_binary(Key) ->
     [Bucket, Key];
@@ -90,9 +108,9 @@ encode_mapred_phase({MR, Fundef, Arg, Keep}) when MR =:= map;
                        {modfun, Mod, Fun} ->
                            {<<"erlang">>,
                             [{<<"module">>,
-                              list_to_binary(atom_to_list(Mod))},
+                              atom_to_binary(Mod, utf8)},
                              {<<"function">>,
-                              list_to_binary(atom_to_list(Fun))}]};
+                              atom_to_binary(Fun, utf8)}]};
                        {jsfun, Name} ->
                            {<<"javascript">>,
                             [{<<"name">>, Name}]};

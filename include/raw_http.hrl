@@ -26,6 +26,7 @@
 -define(MD_LINKS,    <<"Links">>).
 -define(MD_LASTMOD,  <<"X-Riak-Last-Modified">>).
 -define(MD_USERMETA, <<"X-Riak-Meta">>).
+-define(MD_INDEX,    <<"index">>).
 
 %%======================================================================
 %% Names of HTTP header fields
@@ -36,6 +37,7 @@
 -define(HEAD_ENCODING,        "Content-Encoding").
 -define(HEAD_CLIENT,          "X-Riak-ClientId").
 -define(HEAD_USERMETA_PREFIX, "x-riak-meta-").
+-define(HEAD_INDEX_PREFIX,    "X-Riak-Index-").
 
 %%======================================================================
 %% JSON keys/values
@@ -87,6 +89,10 @@
 -define(JSON_JSFUN,      <<"jsfun">>).
 -define(JSON_JSKEY,      <<"key">>).
 
+%% 2i fields
+-define(JSON_RESULTS,      <<"results">>).
+-define(JSON_CONTINUATION, <<"continuation">>).
+
 %%======================================================================
 %% Names of HTTP query parameters
 %%======================================================================
@@ -99,3 +105,6 @@
 -define(Q_STREAM, "stream").
 -define(Q_VTAG,  "vtag").
 -define(Q_RETURNBODY, "returnbody").
+-define(Q_RETURNTERMS, "return_terms").
+-define(Q_MAXRESULTS, "max_results").
+-define(Q_CONTINUATION, "continuation").
