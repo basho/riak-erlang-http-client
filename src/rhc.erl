@@ -327,9 +327,14 @@ delete(Rhc, Bucket, Key, Options) ->
         {error, Error}               -> {error, Error}
     end.
 
+
+%% @equiv delete_obj(Rhc, Obj, [])
 delete_obj(Rhc, Obj) ->
     delete_obj(Rhc, Obj, []).
 
+%% @doc Delete the key of the given object, using the contained vector
+%% clock if present.
+%% @equiv delete(Rhc, riakc_obj:bucket(Obj), riakc_obj:key(Obj), [{vclock, riakc_obj:vclock(Obj)}|Options])
 delete_obj(Rhc, Obj, Options) ->
     Bucket = riakc_obj:bucket(Obj),
     Key = riakc_obj:key(Obj),

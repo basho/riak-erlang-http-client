@@ -32,6 +32,9 @@
          index_acceptor/2
         ]).
 
+%% @doc Extracts query-string options for 2i requests from the given
+%% options.
+-spec query_options([{atom(), term()}]) -> [{string(), string()}].
 query_options(Options) ->
     lists:flatmap(fun query_option/1, Options).
 
@@ -50,7 +53,8 @@ query_option({return_terms, B}) when is_boolean(B) ->
 query_option(_) ->
     [].
 
-
+%% @doc Collects 2i query results on behalf of the caller.
+-spec wait_for_index(reference()) -> {ok, ?INDEX_RESULTS{}} | {error, term()}.
 wait_for_index(ReqId) ->
     wait_for_index(ReqId, []).
 
@@ -79,6 +83,9 @@ merge_index_results(?INDEX_STREAM_RESULT{terms=TL},
                     ?INDEX_RESULTS{terms=T0}=Acc) when is_list(TL) ->
     Acc?INDEX_RESULTS{terms=TL++T0}.
 
+%% @doc The entry point for the middleman process that converts
+%% ibrowse streaming messages into index query results.
+-spec index_acceptor(pid(), reference()) -> no_return().
 index_acceptor(Pid, PidRef) ->
     receive
         {ibrowse_req_id, PidRef, IbrowseRef} ->
@@ -103,6 +110,9 @@ index_acceptor(Pid, PidRef, IBRef) ->
             end
     end.
 
+%% @doc Receives multipart chunks from webmachine_multipart and parses
+%% them into results that can be sent to Pid.
+%% @private
 stream_parts_acceptor(Pid, PidRef, done_parts) ->
     Pid ! {PidRef, done};
 stream_parts_acceptor(Pid, PidRef, {{_Name, _Param, Part},Next}) ->
@@ -114,17 +124,24 @@ stream_parts_acceptor(Pid, PidRef, {{_Name, _Param, Part},Next}) ->
     maybe_send_continuation(Pid, PidRef, Continuation),
     stream_parts_acceptor(Pid, PidRef, Next()).
 
+%% @doc Sends keys or terms to the Pid if they are present in the
+%% result, otherwise sends nothing.
+%% @private
 maybe_send_results(_Pid, _PidRef, undefined, undefined) -> ok;
 maybe_send_results(Pid, PidRef, Keys, Results) ->
     Pid ! {PidRef, ?INDEX_STREAM_RESULT{keys=Keys,
                                         terms=Results}}.
 
+%% @doc Sends the continuation to Pid if it is present in the result,
+%% otherwise sends nothing.
+%% @private
 maybe_send_continuation(_Pid, _PidRef, undefined) -> ok;
 maybe_send_continuation(Pid, PidRef, Continuation) ->
             Pid ! {PidRef, {done, Continuation}}.
 
 %% @doc "next" fun for the webmachine_multipart streamer - waits for
 %%      an ibrowse message, and then returns it to the streamer for processing
+%% @private
 stream_parts_helper(Pid, PidRef, IbrowseRef, First) ->
     fun() ->
             receive
