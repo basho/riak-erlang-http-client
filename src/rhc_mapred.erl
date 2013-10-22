@@ -82,11 +82,11 @@ normalize_mapred_input({Bucket, Key})
     [Bucket, Key];
 normalize_mapred_input({{{Type, Bucket}, Key}, KeyData})
     when is_binary(Type), is_binary(Bucket), is_binary(Key) ->
-    [Type, Bucket, Key, KeyData];
+    [Bucket, Key, KeyData, Type];
 normalize_mapred_input({{Bucket, Key}, KeyData})
   when is_binary(Bucket), is_binary(Key) ->
     [Bucket, Key, KeyData];
-normalize_mapred_input([Type, Bucket, Key, _KeyData]=List)
+normalize_mapred_input([Bucket, Key, _KeyData, Type]=List)
     when is_binary(Type), is_binary(Bucket), is_binary(Key) ->
     List;
 normalize_mapred_input([Bucket, Key])
