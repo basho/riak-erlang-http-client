@@ -171,8 +171,18 @@ get(Rhc, Bucket, Key, Options) ->
     case request(get, Url, ["200", "300"], [], [], Rhc) of
         {ok, _Status, Headers, Body} ->
             {ok, rhc_obj:make_riakc_obj(Bucket, Key, Headers, Body)};
-        {error, {ok, "404", _, _}} ->
-            {error, notfound};
+        {error, {ok, "404", Headers, _}} ->
+            case proplists:get_value(deletedvclock, Options) of
+                true ->
+                    case proplists:get_value("X-Riak-Vclock", Headers) of
+                        undefined ->
+                            {error, notfound};
+                        Vclock ->
+                            {error, {notfound, base64:decode(Vclock)}}
+                    end;
+                _ ->
+                    {error, notfound}
+            end;
         {error, Error} ->
             {error, Error}
     end.
