@@ -50,6 +50,8 @@ query_option({continuation, C}) when is_list(C) ->
     [{?Q_CONTINUATION, C}];
 query_option({return_terms, B}) when is_boolean(B) ->
     [{?Q_RETURNTERMS, atom_to_list(B)}];
+query_option({sort, B}) when is_boolean(B) ->
+    [{?Q_SORT, atom_to_list(B)}];
 query_option(_) ->
     [].
 
