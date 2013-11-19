@@ -5,6 +5,7 @@
   {modules, [
              rhc,
              rhc_bucket,
+             rhc_dt,
              rhc_listkeys,
              rhc_index,
              rhc_mapred,
