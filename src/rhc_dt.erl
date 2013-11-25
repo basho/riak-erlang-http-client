@@ -75,6 +75,10 @@ decode_error(_, {ok, "403", _, Body}) ->
 decode_error(_, {ok, _, _, Body}) ->
     Body.
 
+encode_update_request(register, {assign, Bin}, _Context) ->
+    {struct, [{<<"assign">>, Bin}]};
+encode_update_request(flag, Atom, _Context) ->
+    atom_to_binary(Atom, utf8);
 encode_update_request(counter, Op, _Context) ->
     {struct, [Op]};
 encode_update_request(set, {update, Ops}, Context) ->
