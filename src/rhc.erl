@@ -59,7 +59,11 @@
          mapred_bucket_stream/5,
          search/3, search/5,
          counter_incr/4, counter_incr/5,
-         counter_val/3, counter_val/4]).
+         counter_val/3, counter_val/4,
+         fetch_type/3, fetch_type/4,
+         update_type/4, update_type/5,
+         modify_type/5
+         ]).
 
 -include("raw_http.hrl").
 -include("rhc.hrl").
@@ -638,6 +642,90 @@ mapred_bucket(Rhc, Bucket, Query, Timeout) ->
 mapred_bucket_stream(Rhc, Bucket, Query, ClientPid, Timeout) ->
     mapred_stream(Rhc, Bucket, Query, ClientPid, Timeout).
 
+%% @doc Fetches the representation of a convergent datatype from Riak.
+-spec fetch_type(rhc(), {BucketType::binary(), Bucket::binary()}, Key::binary()) ->
+                        {ok, riakc_datatype:datatype()} | {error, term()}.
+fetch_type(Rhc, BucketAndType, Key) ->
+    fetch_type(Rhc, BucketAndType, Key, []).
+
+%% @doc Fetches the representation of a convergent datatype from Riak,
+%% using the given request options.
+-spec fetch_type(rhc(), {BucketType::binary(), Bucket::binary()}, Key::binary(), [proplists:property()]) ->
+                        {ok, riakc_datatype:datatype()} | {error, term()}.
+fetch_type(Rhc, BucketAndType, Key, Options) ->
+    Query = fetch_type_q_params(Rhc, Options),
+    Url = make_datatype_url(Rhc, BucketAndType, Key, Query),
+    case request(get, Url, ["200"], [], [], Rhc) of
+        {ok, _Status, _Headers, Body} ->
+            {ok, rhc_dt:datatype_from_json(mochijson2:decode(Body))};
+        {error, Reason} ->
+            {error, rhc_dt:decode_error(fetch, Reason)}
+    end.
+
+%% @doc Updates the convergent datatype in Riak with local
+%% modifications stored in the container type.
+-spec update_type(rhc(), {BucketType::binary(), Bucket::binary()}, Key::binary(),
+                  Update::riakc_datatype:update(term())) ->
+                         ok | {ok, Key::binary()} | {ok, riakc_datatype:datatype()} |
+                         {ok, Key::binary(), riakc_datatype:datatype()} | {error, term()}.
+update_type(Rhc, BucketAndType, Key, Update) ->
+    update_type(Rhc, BucketAndType, Key, Update, []).
+
+-spec update_type(rhc(), {BucketType::binary(), Bucket::binary()}, Key::binary(),
+                  Update::riakc_datatype:update(term()), [proplists:property()]) ->
+                         ok | {ok, Key::binary()} | {ok, riakc_datatype:datatype()} |
+                         {ok, Key::binary(), riakc_datatype:datatype()} | {error, term()}.
+update_type(_Rhc, _BucketAndType, _Key, undefined, _Options) ->
+    {error, unmodified};
+update_type(Rhc, BucketAndType, Key, {Type, Op, Context}, Options) ->
+    Query = update_type_q_params(Rhc, Options),
+    Url = make_datatype_url(Rhc, BucketAndType, Key, Query),
+    Body = mochijson2:encode(rhc_dt:encode_update_request(Type, Op, Context)),
+    case request(post, Url, ["200", "201", "204"],
+                 [{"Content-Type", "application/json"}], Body, Rhc) of
+        {ok, "204", _H, _B} ->
+            %% not creation, no returnbody
+            ok;
+        {ok, "200", _H, RBody} ->
+            %% returnbody was specified
+            {ok, rhc_dt:datatype_from_json(mochijson2:decode(RBody))};
+        {ok, "201", Headers, RBody} ->
+            %% Riak-assigned key
+            Url = proplists:get_value("Location", Headers),
+            Key = list_to_binary(lists:last(string:tokens(Url, "/"))),
+            case proplists:get_value("Content-Length", Headers) of
+                "0" ->
+                    {ok, Key};
+                _ ->
+                    {ok, Key, rhc_dt:datatype_from_json(mochijson2:decode(RBody))}
+            end;
+        {error, Reason} ->
+            {error, rhc_dt:decode_error(update, Reason)}
+    end.
+
+%% @doc Fetches, applies the given function to the value, and then
+%% updates the datatype in Riak. If an existing value is not found,
+%% but you want the updates to apply anyway, use the 'create' option.
+-spec modify_type(rhc(), fun((riakc_datatype:datatype()) -> riakc_datatype:datatype()),
+                  {BucketType::binary(), Bucket::binary()}, Key::binary(), [proplists:property()]) ->
+                         ok | {ok, riakc_datatype:datatype()} | {error, term()}.
+modify_type(Rhc, Fun, BucketAndType, Key, Options) ->
+    Create = proplists:get_value(create, Options, true),
+    case fetch_type(Rhc, BucketAndType, Key, Options) of
+        {ok, Data} ->
+            NewData = Fun(Data),
+            Mod = riakc_datatype:module_for_term(NewData),
+            update_type(Rhc, BucketAndType, Key, Mod:to_op(NewData), Options);
+        {error, {notfound, Type}} when Create ->
+            %% Not found, but ok to create it
+            Mod = riakc_datatype:module(Type),
+            NewData = Fun(Mod:new()),
+            update_type(Rhc, BucketAndType, Key, Mod:to_op(NewData), Options);
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+
 %% INTERNAL
 
 %% @doc Get the client ID to use, given the passed options and client.
@@ -744,6 +832,18 @@ make_counter_url(Rhc, Bucket, Key, Query) ->
          <<"buckets">>, "/", Bucket, "/", <<"counters">>, "/", Key, "?",
          [ [mochiweb_util:urlencode(Query)] || Query =/= []]])).
 
+make_datatype_url(Rhc, BucketAndType, Key, Query) ->
+    case extract_bucket_type(BucketAndType) of
+        {undefined, _B} ->
+            throw(default_bucket_type_disallowed);
+        {Type, Bucket} ->
+            unicode:characters_to_list(
+              [root_url(Rhc),
+               "types/", Type,
+               "/buckets/", Bucket,
+               "/datatypes/", [ Key || Key /= undefined ],
+               [ ["?", mochiweb_util:urlencode(Query)] || Query /= [] ]])
+    end.
 
 %% @doc send an ibrowse request
 request(Method, Url, Expect, Headers, Body, Rhc) ->
@@ -800,6 +900,13 @@ counter_q_params(Rhc, Options) ->
 %% @spec delete_q_params(rhc(), proplist()) -> proplist()
 delete_q_params(Rhc, Options) ->
     options_list([r,w,dw,pr,pw,rw,timeout], Options ++ options(Rhc)).
+
+fetch_type_q_params(Rhc, Options) ->
+    options_list([r,pr,basic_quorum,notfound_ok,timeout,include_context], Options ++ options(Rhc)).
+
+update_type_q_params(Rhc, Options) ->
+    options_list([r,w,dw,pr,pw,basic_quorum,notfound_ok,timeout,include_context,{return_body, "returnbody"}],
+                 Options ++ options(Rhc)).
 
 %% @doc Extract the options for the given `Keys' from the possible
 %%      list of `Options'.
