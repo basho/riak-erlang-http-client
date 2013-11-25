@@ -686,10 +686,10 @@ update_type(Rhc, BucketAndType, Key, {Type, Op, Context}, Options) ->
         {ok, "204", _H, _B} ->
             %% not creation, no returnbody
             ok;
-        {ok, "200", _H, Body} ->
+        {ok, "200", _H, RBody} ->
             %% returnbody was specified
-            {ok, rhc_dt:datatype_from_json(mochijson2:decode(Body))};
-        {ok, "201", Headers, Body} ->
+            {ok, rhc_dt:datatype_from_json(mochijson2:decode(RBody))};
+        {ok, "201", Headers, RBody} ->
             %% Riak-assigned key
             Url = proplists:get_value("Location", Headers),
             Key = list_to_binary(lists:last(string:tokens(Url, "/"))),
@@ -697,7 +697,7 @@ update_type(Rhc, BucketAndType, Key, {Type, Op, Context}, Options) ->
                 "0" ->
                     {ok, Key};
                 _ ->
-                    {ok, Key, rhc_dt:datatype_from_json(mochijson2:decode(Body))}
+                    {ok, Key, rhc_dt:datatype_from_json(mochijson2:decode(RBody))}
             end;
         {error, Reason} ->
             {error, rhc_dt:decode_error(update, Reason)}
