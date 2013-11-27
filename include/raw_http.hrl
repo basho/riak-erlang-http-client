@@ -109,3 +109,4 @@
 -define(Q_PAGINATION_SORT, "pagination_sort").
 -define(Q_MAXRESULTS, "max_results").
 -define(Q_CONTINUATION, "continuation").
+-define(Q_TERM_REGEX, "term_regex").
