@@ -106,5 +106,6 @@
 -define(Q_VTAG,  "vtag").
 -define(Q_RETURNBODY, "returnbody").
 -define(Q_RETURNTERMS, "return_terms").
+-define(Q_SORT, "sort").
 -define(Q_MAXRESULTS, "max_results").
 -define(Q_CONTINUATION, "continuation").
