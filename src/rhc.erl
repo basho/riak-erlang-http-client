@@ -139,7 +139,7 @@ get_server_info(Rhc) ->
     end.
 
 %% @doc Get the list of full stats from a /stats call to the server.
-%% @spec get_server_info(rhc()) -> {ok, proplist()}|{error, term()}
+%% @spec get_server_stats(rhc()) -> {ok, proplist()}|{error, term()}
 get_server_stats(Rhc) ->
     Url = stats_url(Rhc),
     case request(get, Url, ["200"], [], [], Rhc) of
@@ -237,7 +237,7 @@ put(Rhc, Object, Options) ->
 
 %% @doc Increment the counter stored under `bucket', `key'
 %%      by the given `amount'.
-%% @equiv counter_incr(rhc(), binary(), binary(), integer(), []).
+%% @equiv counter_incr(Rhc, Bucket, Key, Amt, [])
 -spec counter_incr(rhc(), binary(), binary(), integer()) -> ok | {ok, integer()}
                                                                 | {error, term()}.
 counter_incr(Rhc, Bucket, Key, Amt) ->
@@ -251,7 +251,7 @@ counter_incr(Rhc, Bucket, Key, Amt) ->
 %%        <dt>`w'</dt>
 %%          <dd>The 'W' value to use for the write</dd>
 %%        <dt>`dw'</dt>
-%%          <dd>The 'DW' value to use for the write</dd
+%%          <dd>The 'DW' value to use for the write</dd>
 %%        <dt>`pw'</dt>
 %%          <dd>The 'PW' value to use for the write</dd>
 %%        <dt>`timeout'</dt>
@@ -261,7 +261,7 @@ counter_incr(Rhc, Bucket, Key, Amt) ->
 %%          response. `ok' is returned if returnvalue is absent | `false'.
 %%          `{ok, integer()}' is returned if returnvalue is `true'.</dd>
 %%      </dl>
-%% @see the riak docs at http://docs.basho.com/riak/latest/references/apis/http/ for details
+%% See the riak docs at http://docs.basho.com/riak/latest/references/apis/http/ for details
 -spec counter_incr(rhc(), binary(), binary(), integer(), list()) -> ok | {ok, integer()}
                                                                         | {error, term()}.
 counter_incr(Rhc, Bucket, Key, Amt, Options) ->
@@ -291,17 +291,17 @@ counter_val(Rhc, Bucket, Key) ->
 %%        <dt>`r'</dt>
 %%          <dd>The 'R' value to use for the read</dd>
 %%        <dt>`pr'</dt>
-%%          <dd>The 'PR' value to use for the read</dd
+%%          <dd>The 'PR' value to use for the read</dd>
 %%        <dt>`pw'</dt>
 %%          <dd>The 'PW' value to use for the write</dd>
 %%        <dt>`timeout'</dt>
 %%          <dd>The server-side timeout for the write in ms</dd>
 %%        <dt>`notfound_ok'</dt>
-%%          <dd>if `true' not_found replies from vnodes count toward read quorum.<//dd>
+%%          <dd>if `true' not_found replies from vnodes count toward read quorum.</dd>
 %%        <dt>`basic_quorum'</dt>
 %%          <dd>When set to `true' riak will return a value as soon as it gets a quorum of responses.</dd>
 %%      </dl>
-%% @see the riak docs at http://docs.basho.com/riak/latest/references/apis/http/ fro details
+%% See the riak docs at http://docs.basho.com/riak/latest/references/apis/http/ fro details
 -spec counter_val(rhc(), term(), term(), list()) -> {ok, integer()} | {error, term()}.
 counter_val(Rhc, Bucket, Key, Options) ->
     Qs = counter_q_params(Rhc, Options),
@@ -397,7 +397,7 @@ list_keys(Rhc, Bucket) ->
     list_keys(Rhc, Bucket, undefined).
 
 %% @doc List the keys in the given bucket.
-%% @spec list_keys(rhc(), bucket()) -> {ok, [key()]}|{error, term()}
+%% @spec list_keys(rhc(), bucket(), integer()) -> {ok, [key()]}|{error, term()}
 
 list_keys(Rhc, Bucket, Timeout) ->
     {ok, ReqId} = stream_list_keys(Rhc, Bucket, Timeout),
@@ -417,7 +417,7 @@ stream_list_keys(Rhc, Bucket) ->
 %%         <dt>`{error, term()}'</dt>
 %%            <dd>an error occurred</dd>
 %%      </dl>
-%% @spec stream_list_keys(rhc(), bucket()) ->
+%% @spec stream_list_keys(rhc(), bucket(), integer()) ->
 %%          {ok, reference()}|{error, term()}
 stream_list_keys(Rhc, Bucket, Timeout) ->
     ParamList0 = [{?Q_KEYS, ?Q_STREAM},
@@ -516,7 +516,7 @@ reset_bucket(Rhc, Bucket) ->
 
 
 %% @doc Get the properties of the given bucket.
-%% @spec get_bucket(rhc(), bucket()) -> {ok, proplist()}|{error, term()}
+%% @spec get_bucket_type (rhc(), bucket()) -> {ok, proplist()}|{error, term()}
 get_bucket_type(Rhc, Type) ->
     Url = make_url(Rhc, {Type, undefined}, undefined, [{?Q_PROPS, ?Q_TRUE},
                                             {?Q_KEYS, ?Q_FALSE}]),
@@ -531,7 +531,7 @@ get_bucket_type(Rhc, Type) ->
 
 %% @doc Set the properties of the given bucket type.
 %%
-%% @spec set_bucket(rhc(), bucket(), proplist()) -> ok|{error, term()}
+%% @spec set_bucket_type(rhc(), bucket(), proplist()) -> ok|{error, term()}
 set_bucket_type(Rhc, Type, Props0) ->
     Url = make_url(Rhc, {Type, undefined}, undefined, [{?Q_PROPS, ?Q_TRUE}]),
     Headers =  [{"Content-Type", "application/json"}],
