@@ -6,7 +6,7 @@
 interface
 
 ** Quick Start
-   You must have [[http://erlang.org/download.html][Erlang/OTP R13B04]] or later and a GNU-style build
+   You must have [[http://erlang.org/download.html][Erlang/OTP R15B01]] or later and a GNU-style build
    system to compile and run =riak-erlang-http-client=.
 
 #+BEGIN_SRC shell
