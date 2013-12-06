@@ -67,12 +67,14 @@
 
 -include("raw_http.hrl").
 -include("rhc.hrl").
+-include_file("riakc/include/riakc.hrl").
 
 -export_type([rhc/0]).
 -opaque rhc() :: #rhc{}.
 
 %% @doc Create a client for connecting to the default port on localhost.
 %% @equiv create("127.0.0.1", 8098, "riak", [])
+-spec create() -> rhc().
 create() ->
     create("127.0.0.1", 8098, "riak", []).
 
@@ -85,6 +87,7 @@ create() ->
 %%      the Options list.  The client id can also be specified by
 %%      adding `{client_id, ID}' to the Options list.
 %% @spec create(string(), integer(), string(), Options::list()) -> rhc()
+-spec create(string(), integer(), string(), list()) -> rhc().
 create(IP, Port, Prefix, Opts0) when is_list(IP), is_integer(Port),
                                      is_list(Prefix), is_list(Opts0) ->
     Opts = case proplists:lookup(client_id, Opts0) of
@@ -99,18 +102,22 @@ create(IP, Port, Prefix, Opts0) when is_list(IP), is_integer(Port),
 
 %% @doc Get the IP this client will connect to.
 %% @spec ip(rhc()) -> string()
+-spec ip(rhc()) -> string().
 ip(#rhc{ip=IP}) -> IP.
 
 %% @doc Get the Port this client will connect to.
 %% @spec port(rhc()) -> integer()
+-spec port(rhc()) -> integer().
 port(#rhc{port=Port}) -> Port.
 
 %% @doc Get the prefix this client will use for object URLs
 %% @spec prefix(rhc()) -> string()
+-spec prefix(rhc()) -> string().
 prefix(#rhc{prefix=Prefix}) -> Prefix.
 
 %% @doc Ping the server by requesting the "/ping" resource.
 %% @spec ping(rhc()) -> ok|{error, term()}
+-spec ping(rhc()) -> ok | {error, term()}.
 ping(Rhc) ->
     Url = ping_url(Rhc),
     case request(get, Url, ["200","204"], [], [], Rhc) of
@@ -122,12 +129,14 @@ ping(Rhc) ->
 
 %% @doc Get the client ID that this client will use when storing objects.
 %% @spec get_client_id(rhc()) -> {ok, string()}
+-spec get_client_id(rhc()) -> {ok, string()}.
 get_client_id(Rhc) ->
     {ok, client_id(Rhc, [])}.
 
 %% @doc Get some basic information about the server.  The proplist returned
 %%      should include `node' and `server_version' entries.
 %% @spec get_server_info(rhc()) -> {ok, proplist()}|{error, term()}
+-spec get_server_info(rhc()) -> {ok, list()}|{error, term()}.
 get_server_info(Rhc) ->
     Url = stats_url(Rhc),
     case request(get, Url, ["200"], [], [], Rhc) of
@@ -140,6 +149,7 @@ get_server_info(Rhc) ->
 
 %% @doc Get the list of full stats from a /stats call to the server.
 %% @spec get_server_stats(rhc()) -> {ok, proplist()}|{error, term()}
+-spec get_server_stats(rhc()) -> {ok, list()}|{error, term()}.
 get_server_stats(Rhc) ->
     Url = stats_url(Rhc),
     case request(get, Url, ["200"], [], [], Rhc) of
@@ -152,6 +162,8 @@ get_server_stats(Rhc) ->
     end.
 
 %% @equiv get(Rhc, Bucket, Key, [])
+%%-spec get(rhc(), bucket(), key()) -> {ok, riakc_obj()}|{error, term()}.
+-spec get(rhc(), term(), term()) -> {ok, term()}|{error, term()}.
 get(Rhc, Bucket, Key) ->
     get(Rhc, Bucket, Key, []).
 
@@ -169,6 +181,7 @@ get(Rhc, Bucket, Key) ->
 %%      `notfound' if the key was not found.
 %% @spec get(rhc(), bucket(), key(), proplist())
 %%          -> {ok, riakc_obj()}|{error, term()}
+-spec get(rhc(), bucket(), key(), list()) -> {ok, riakc_obj()}|{error, term()}.
 get(Rhc, Bucket, Key, Options) ->
     Qs = get_q_params(Rhc, Options),
     Url = make_url(Rhc, Bucket, Key, Qs),
@@ -326,7 +339,8 @@ delete(Rhc, Bucket, Key) ->
 %%        <dt>`timeout'</dt>
 %%          <dd>The server-side timeout for the write in ms</dd>
 %%      </dl>
-%% @spec delete(rhc(), bucket(), key(), proplist()) -> ok|{error, term()}
+%% @spec delete(rhc(), bucket(), key(), proplist()) -> ≈
+%%-spec delete(rhc(), bucket(), key(), list()) -> ok|{error, term()}.
 delete(Rhc, Bucket, Key, Options) ->
     Qs = delete_q_params(Rhc, Options),
     Url = make_url(Rhc, Bucket, Key, Qs),
@@ -343,12 +357,14 @@ delete(Rhc, Bucket, Key, Options) ->
 
 
 %% @equiv delete_obj(Rhc, Obj, [])
+%%-spec delete_obj(rhc(), riakc_obj()) -> ok | {error, term()}.
 delete_obj(Rhc, Obj) ->
     delete_obj(Rhc, Obj, []).
 
 %% @doc Delete the key of the given object, using the contained vector
 %% clock if present.
 %% @equiv delete(Rhc, riakc_obj:bucket(Obj), riakc_obj:key(Obj), [{vclock, riakc_obj:vclock(Obj)}|Options])
+%%-spec delete_obj(rhc(), riakc_obj(), list()) -> ok | {error, term()}.
 delete_obj(Rhc, Obj, Options) ->
     Bucket = riakc_obj:bucket(Obj),
     Key = riakc_obj:key(Obj),
