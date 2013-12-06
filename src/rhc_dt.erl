@@ -31,6 +31,7 @@
 
 -define(FIELD_PATTERN, "^(.*)_(counter|set|register|flag|map)$").
 
+-spec datatype_from_json({'struct',[any()]}) -> any().
 datatype_from_json({struct, Props}) ->
     Value = proplists:get_value(<<"value">>, Props),
     Type = binary_to_existing_atom(proplists:get_value(<<"type">>, Props), utf8),
@@ -38,6 +39,7 @@ datatype_from_json({struct, Props}) ->
     Mod = riakc_datatype:module(Type),
     Mod:new(decode_value(Type, Value), Context).
 
+-spec decode_value('counter' | 'flag' | 'map' | 'register' | 'set',_) -> any().
 decode_value(counter, Value) -> Value;
 decode_value(set, Value) -> Value;
 decode_value(flag, Value) -> Value;
@@ -48,14 +50,17 @@ decode_value(map, {struct, Fields}) ->
           {{Name,Type}, decode_value(Type, Value)}
       end || {Field, Value} <- Fields ].
 
+-spec field_from_json(binary()) -> {binary() | [binary() | string() | char() | {integer(),integer()} | {'error',[any()],binary()} | {'incomplete',[any()],binary()}] | {integer(),integer()} | {'error',string(),binary()} | {'incomplete',string(),binary()},atom()}.
 field_from_json(Bin) when is_binary(Bin) ->
     {match, [Name, BinType]} = re:run(Bin, ?FIELD_PATTERN, [anchored, {capture, all_but_first, binary}]),
     {Name, binary_to_existing_atom(BinType, utf8)}.
 
+-spec field_to_json({binary(),atom()}) -> <<_:8,_:_*8>>.
 field_to_json({Name, Type}) when is_binary(Name), is_atom(Type) ->
     BinType = atom_to_binary(Type, utf8),
     <<Name/bytes, $_, BinType/bytes>>.
 
+-spec decode_error(_,{'ok',_,_,_}) -> any().
 decode_error(fetch, {ok, "404", Headers, Body}) ->
     case proplists:get_value("Content-Type", Headers) of
         "application/json" ->
@@ -75,6 +80,7 @@ decode_error(_, {ok, "403", _, Body}) ->
 decode_error(_, {ok, _, _, Body}) ->
     Body.
 
+-spec encode_update_request('counter' | 'flag' | 'map' | 'register' | 'set', term(), term()) -> binary() | {'struct',list()}.
 encode_update_request(register, {assign, Bin}, _Context) ->
     {struct, [{<<"assign">>, Bin}]};
 encode_update_request(flag, Atom, _Context) ->
@@ -89,6 +95,7 @@ encode_update_request(map, {update, Ops}, Context) ->
     {struct, orddict:to_list(lists:foldl(fun encode_map_op/2, orddict:new(), Ops)) ++ 
              include_context(Context)}.
 
+-spec encode_map_op({'add',{binary(),atom()}} | {'remove',{binary(),atom()}} | {'update',{binary(),'counter' | 'flag' | 'map' | 'register' | 'set'},_},[{_,_}]) -> [{_,_},...].
 encode_map_op({add, Entry}, Ops) ->
     orddict:append(add, field_to_json(Entry), Ops);
 encode_map_op({remove, Entry}, Ops) ->
@@ -103,6 +110,7 @@ encode_map_op({update, {_Key,Type}=Field, Op}, Ops) ->
             orddict:store(update, {struct, [Update]}, Ops)
     end.
 
+-spec include_context(undefined | binary() | term()) -> [{<<_:56>>,_}].
 include_context(undefined) -> [];
 include_context(<<>>) -> [];
 include_context(Bin) -> [{<<"context">>, Bin}].

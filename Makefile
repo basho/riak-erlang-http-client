@@ -19,10 +19,10 @@ COMBO_PLT = $(HOME)/.rhc_dialyzer_plt
 APPS = kernel stdlib sasl erts eunit
 INCLUDES = -I include -I deps
 check_plt: all
-	dialyzer --check_plt --plt $(COMBO_PLT) --apps $(APPS) ./deps/*/ebin
+	dialyzer --check_plt --plt $(COMBO_PLT) --apps $(APPS) deps/*/ebin
 
 build_plt: all
-	dialyzer --build_plt --output_plt $(COMBO_PLT) --apps $(APPS) ./deps/*/ebin
+	dialyzer --build_plt --output_plt $(COMBO_PLT) --apps $(APPS) deps/*/ebin
 
 dialyzer: all
 	@echo
@@ -33,7 +33,7 @@ dialyzer: all
 	dialyzer --verbose -Wno_return --plt $(COMBO_PLT) $(INCLUDES) ebin
 
 typer: $(DEPSOLVER_PLT)
-	typer --plt $(COMBO_PLT) -r ./src
+	typer --plt $(COMBO_PLT) $(INCLUDES) -r src
 
 plt_info:
 	dialyzer --plt $(COMBO_PLT) --plt_info

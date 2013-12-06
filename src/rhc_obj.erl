@@ -30,9 +30,10 @@
 
 -include("raw_http.hrl").
 -include("rhc.hrl").
-
+-include_lib("riakc/include/riakc.hrl").
 %% HTTP -> riakc_obj
 
+-spec make_riakc_obj(binary() | {binary(),binary()},'undefined' | binary(),[any()],binary()) -> riakc_obj().
 make_riakc_obj(Bucket, Key, Headers, Body) ->
     Vclock = base64:decode(proplists:get_value(?HEAD_VCLOCK, Headers, "")),
     case ctype_from_headers(Headers) of
@@ -47,10 +48,12 @@ make_riakc_obj(Bucket, Key, Headers, Body) ->
               [{headers_to_metadata(Headers), Body}])
     end.
 
+-spec ctype_from_headers([any()]) -> {[byte()],_}.
 ctype_from_headers(Headers) ->
     mochiweb_util:parse_header(
       proplists:get_value(?HEAD_CTYPE, Headers)).
 
+-spec vtag_from_headers([any()]) -> any().
 vtag_from_headers(Headers) ->
     %% non-sibling uses ETag, sibling uses Etag
     %% (note different capitalization on 't')
@@ -60,6 +63,7 @@ vtag_from_headers(Headers) ->
     end.
 
 
+-spec lastmod_from_headers([any()]) -> 'undefined' | {integer(),integer(),0}.
 lastmod_from_headers(Headers) ->
     case proplists:get_value("Last-Modified", Headers) of
         undefined ->
@@ -73,6 +77,7 @@ lastmod_from_headers(Headers) ->
              0}              % Microseconds
     end.
 
+-spec decode_siblings(maybe_improper_list(),binary()) -> [{dict(),binary()}].
 decode_siblings(Boundary, <<"\r\n",SibBody/binary>>) ->
     decode_siblings(Boundary, SibBody);
 decode_siblings(Boundary, SibBody) ->
@@ -83,6 +88,7 @@ decode_siblings(Boundary, SibBody) ->
        element(1, split_binary(Body, size(Body)-2))} %% remove trailing \r\n
       || {_, {_, Headers}, Body} <- Parts ].
 
+-spec headers_to_metadata([any()]) -> dict().
 headers_to_metadata(Headers) ->
     UserMeta = extract_user_metadata(Headers),
 
@@ -108,13 +114,16 @@ headers_to_metadata(Headers) ->
         Entries -> dict:store(?MD_INDEX, Entries, LinkMeta)
     end.
 
+-spec extract_user_metadata([any()]) -> any().
 extract_user_metadata(Headers) ->
     lists:foldl(fun extract_user_metadata/2, dict:new(), Headers).
 
+-spec extract_user_metadata(_,_) -> any().
 extract_user_metadata({?HEAD_USERMETA_PREFIX++K, V}, Dict) ->
     riakc_obj:set_user_metadata_entry(Dict, {K, V});
 extract_user_metadata(_, D) -> D.
 
+-spec extract_links([any()]) -> any().
 extract_links(Headers) ->
     {ok, Re} = re:compile("</[^/]+/([^/]+)/([^/]+)>; *riaktag=\"(.*)\""),
     Extractor = fun(L, Acc) ->
@@ -128,9 +137,11 @@ extract_links(Headers) ->
     LinkHeader = proplists:get_value(?HEAD_LINK, Headers, []),
     lists:foldl(Extractor, [], string:tokens(LinkHeader, ",")).
 
+-spec extract_indexes([any()]) -> [{binary(),binary() | integer()}].
 extract_indexes(Headers) ->
     [ {list_to_binary(K), decode_index_value(K,V)} || {?HEAD_INDEX_PREFIX++K, V} <- Headers].
 
+-spec decode_index_value([byte()],maybe_improper_list(binary() | maybe_improper_list(any(),binary() | []) | char(),binary() | [])) -> binary() | integer().
 decode_index_value(K, V) ->
     case lists:last(string:tokens(K, "_")) of
         "bin" ->
@@ -141,9 +152,11 @@ decode_index_value(K, V) ->
 
 %% riakc_obj -> HTTP
 
+-spec serialize_riakc_obj(_, riakc_obj()) -> {[{list(), list()}], binary()}.
 serialize_riakc_obj(Rhc, Object) ->
     {make_headers(Rhc, Object), make_body(Object)}.
 
+-spec make_headers(rhc:rhc(), riakc_obj()) -> [{list(),list()}].
 make_headers(Rhc, Object) ->
     MD = riakc_obj:get_update_metadata(Object),
     CType = case dict:find(?MD_CTYPE, MD) of
@@ -164,6 +177,7 @@ make_headers(Rhc, Object) ->
        encode_indexes(MD)
        | encode_user_metadata(MD) ]).
 
+-spec encode_links(rhc:rhc(), list()) -> list().
 encode_links(_, []) -> [];
 encode_links(#rhc{prefix=Prefix}, Links) ->
     {{FirstBucket, FirstKey}, FirstTag} = hd(Links),
@@ -174,10 +188,12 @@ encode_links(#rhc{prefix=Prefix}, Links) ->
       format_link(Prefix, FirstBucket, FirstKey, FirstTag),
       tl(Links)).
 
+-spec encode_user_metadata(dict()) -> [].
 encode_user_metadata(_Metadata) ->
     %% TODO
     [].
 
+-spec encode_indexes(dict()) -> [{nonempty_maybe_improper_list(any(),[] | {_,_,_}),maybe_improper_list()}].
 encode_indexes(MD) ->
     case dict:find(?MD_INDEX, MD) of
         {ok, Entries} ->
@@ -186,6 +202,7 @@ encode_indexes(MD) ->
             []
     end.
 
+-spec encode_index({term(), binary() | list() | integer()}) -> {list(), list()}.
 encode_index({Name, IntValue}) when is_integer(IntValue) ->
     encode_index({Name, integer_to_list(IntValue)});
 encode_index({Name, BinValue}) when is_binary(BinValue) ->
@@ -194,10 +211,12 @@ encode_index({Name, String}) when is_list(String) ->
     {?HEAD_INDEX_PREFIX ++ unicode:characters_to_list(Name, latin1),
      String}.
 
+-spec format_link(_, _, riakc:key(), _) -> string().
 format_link(Prefix, Bucket, Key, Tag) ->
     io_lib:format("</~s/~s/~s>; riaktag=\"~s\"",
                   [Prefix, Bucket, Key, Tag]).
 
+-spec make_body(riakc_obj()) -> binary().
 make_body(Object) ->
     case riakc_obj:get_update_value(Object) of
         Val when is_binary(Val) -> Val;
@@ -210,6 +229,7 @@ make_body(Object) ->
             term_to_binary(Val)
     end.
 
+-spec is_iolist(term()) -> boolean().
 is_iolist(Binary) when is_binary(Binary) -> true;
 is_iolist(List) when is_list(List) ->
     lists:all(fun is_iolist/1, List);
