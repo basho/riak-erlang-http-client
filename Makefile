@@ -18,6 +18,7 @@ doc:
 COMBO_PLT = $(HOME)/.rhc_dialyzer_plt
 APPS = kernel stdlib sasl erts eunit
 INCLUDES = -I include -I deps
+
 check_plt: all
 	dialyzer --check_plt --plt $(COMBO_PLT) --apps $(APPS) deps/*/ebin
 
@@ -32,13 +33,13 @@ dialyzer: all
 	@sleep 1
 	dialyzer --verbose -Wno_return --plt $(COMBO_PLT) $(INCLUDES) ebin
 
-typer: $(DEPSOLVER_PLT)
+typer:
 	typer --plt $(COMBO_PLT) $(INCLUDES) -r src
 
 plt_info:
 	dialyzer --plt $(COMBO_PLT) --plt_info
 
-cleanplt:
+clean_plt:
 	@echo
 	@echo "Are you sure?  It takes time to re-build."
 	@echo Deleting $(COMBO_PLT) in 5 seconds.
