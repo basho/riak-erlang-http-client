@@ -67,12 +67,14 @@
 
 -include("raw_http.hrl").
 -include("rhc.hrl").
+-include_lib("riakc/include/riakc.hrl").
 
 -export_type([rhc/0]).
 -opaque rhc() :: #rhc{}.
 
 %% @doc Create a client for connecting to the default port on localhost.
 %% @equiv create("127.0.0.1", 8098, "riak", [])
+-spec create() -> rhc().
 create() ->
     create("127.0.0.1", 8098, "riak", []).
 
@@ -84,7 +86,7 @@ create() ->
 %%      Defaults for r, w, dw, rw, and return_body may be passed in
 %%      the Options list.  The client id can also be specified by
 %%      adding `{client_id, ID}' to the Options list.
-%% @spec create(string(), integer(), string(), Options::list()) -> rhc()
+-spec create(string(), integer(), string(), list()) -> rhc().
 create(IP, Port, Prefix, Opts0) when is_list(IP), is_integer(Port),
                                      is_list(Prefix), is_list(Opts0) ->
     Opts = case proplists:lookup(client_id, Opts0) of
@@ -98,19 +100,21 @@ create(IP, Port, Prefix, Opts0) when is_list(IP), is_integer(Port),
     #rhc{ip=IP, port=Port, prefix=Prefix, options=Opts}.
 
 %% @doc Get the IP this client will connect to.
-%% @spec ip(rhc()) -> string()
+-spec ip(rhc()) -> string().
+
 ip(#rhc{ip=IP}) -> IP.
 
 %% @doc Get the Port this client will connect to.
-%% @spec port(rhc()) -> integer()
+-spec port(rhc()) -> integer().
 port(#rhc{port=Port}) -> Port.
 
 %% @doc Get the prefix this client will use for object URLs
-%% @spec prefix(rhc()) -> string()
+-spec prefix(rhc()) -> string().
+
 prefix(#rhc{prefix=Prefix}) -> Prefix.
 
 %% @doc Ping the server by requesting the "/ping" resource.
-%% @spec ping(rhc()) -> ok|{error, term()}
+-spec ping(rhc()) -> ok | {error, term()}.
 ping(Rhc) ->
     Url = ping_url(Rhc),
     case request(get, Url, ["200","204"], [], [], Rhc) of
@@ -121,13 +125,14 @@ ping(Rhc) ->
     end.
 
 %% @doc Get the client ID that this client will use when storing objects.
-%% @spec get_client_id(rhc()) -> {ok, string()}
+
+-spec get_client_id(rhc()) -> {ok, string()}.
 get_client_id(Rhc) ->
     {ok, client_id(Rhc, [])}.
 
 %% @doc Get some basic information about the server.  The proplist returned
 %%      should include `node' and `server_version' entries.
-%% @spec get_server_info(rhc()) -> {ok, proplist()}|{error, term()}
+-spec get_server_info(rhc()) -> {ok, list()}|{error, term()}.
 get_server_info(Rhc) ->
     Url = stats_url(Rhc),
     case request(get, Url, ["200"], [], [], Rhc) of
@@ -139,7 +144,7 @@ get_server_info(Rhc) ->
     end.
 
 %% @doc Get the list of full stats from a /stats call to the server.
-%% @spec get_server_stats(rhc()) -> {ok, proplist()}|{error, term()}
+-spec get_server_stats(rhc()) -> {ok, list()}|{error, term()}.
 get_server_stats(Rhc) ->
     Url = stats_url(Rhc),
     case request(get, Url, ["200"], [], [], Rhc) of
@@ -151,7 +156,9 @@ get_server_stats(Rhc) ->
             {error, Error}
     end.
 
-%% @equiv get(Rhc, Bucket, Key, [])
+
+-spec get(rhc(), term(), term()) -> {ok, term()}|{error, term()}.
+
 get(Rhc, Bucket, Key) ->
     get(Rhc, Bucket, Key, []).
 
@@ -167,8 +174,7 @@ get(Rhc, Bucket, Key) ->
 %%
 %%      The term in the second position of the error tuple will be
 %%      `notfound' if the key was not found.
-%% @spec get(rhc(), bucket(), key(), proplist())
-%%          -> {ok, riakc_obj()}|{error, term()}
+-spec get(rhc(), {binary(), bucket()}, key(), list()) -> {ok, riakc_obj()}|{error, term()}.
 get(Rhc, Bucket, Key, Options) ->
     Qs = get_q_params(Rhc, Options),
     Url = make_url(Rhc, Bucket, Key, Qs),
@@ -191,7 +197,7 @@ get(Rhc, Bucket, Key, Options) ->
             {error, Error}
     end.
 
-%% @equiv put(Rhc, Object, [])
+-spec put(rhc(),riakc_obj()) -> ok | {error, term()} | {ok, riakc_obj()}.
 put(Rhc, Object) ->
     put(Rhc, Object, []).
 
@@ -210,8 +216,8 @@ put(Rhc, Object) ->
 %%          response.  `ok' is returned if return_body is false.
 %%          `{ok, Object}' is returned if return_body is true.</dd>
 %%      </dl>
-%% @spec put(rhc(), riakc_obj(), proplist())
-%%         -> ok|{ok, riakc_obj()}|{error, term()}
+
+-spec put(rhc(),riakc_obj(),list()) -> ok | {error, term()} | {ok, riakc_obj()}.
 put(Rhc, Object, Options) ->
     Qs = put_q_params(Rhc, Options),
     Bucket = riakc_obj:bucket(Object),
@@ -237,7 +243,6 @@ put(Rhc, Object, Options) ->
 
 %% @doc Increment the counter stored under `bucket', `key'
 %%      by the given `amount'.
-%% @equiv counter_incr(Rhc, Bucket, Key, Amt, [])
 -spec counter_incr(rhc(), binary(), binary(), integer()) -> ok | {ok, integer()}
                                                                 | {error, term()}.
 counter_incr(Rhc, Bucket, Key, Amt) ->
@@ -313,7 +318,7 @@ counter_val(Rhc, Bucket, Key, Options) ->
             {error, Error}
     end.
 
-%% @equiv delete(Rhc, Bucket, Key, [])
+-spec delete(rhc(),{binary(), bucket()}, binary()) -> ok | {error, term()}.
 delete(Rhc, Bucket, Key) ->
     delete(Rhc, Bucket, Key, []).
 
@@ -326,7 +331,7 @@ delete(Rhc, Bucket, Key) ->
 %%        <dt>`timeout'</dt>
 %%          <dd>The server-side timeout for the write in ms</dd>
 %%      </dl>
-%% @spec delete(rhc(), bucket(), key(), proplist()) -> ok|{error, term()}
+-spec delete(rhc(), {binary(), bucket()}, key(), list()) -> ok | {error, term()}.
 delete(Rhc, Bucket, Key, Options) ->
     Qs = delete_q_params(Rhc, Options),
     Url = make_url(Rhc, Bucket, Key, Qs),
@@ -342,39 +347,45 @@ delete(Rhc, Bucket, Key, Options) ->
     end.
 
 
-%% @equiv delete_obj(Rhc, Obj, [])
+-spec delete_obj(rhc(), riakc_obj()) -> ok | {error, term()}.
 delete_obj(Rhc, Obj) ->
     delete_obj(Rhc, Obj, []).
 
 %% @doc Delete the key of the given object, using the contained vector
 %% clock if present.
-%% @equiv delete(Rhc, riakc_obj:bucket(Obj), riakc_obj:key(Obj), [{vclock, riakc_obj:vclock(Obj)}|Options])
+-spec delete_obj(rhc(), riakc_obj(), list()) -> ok | {error, term()}.
 delete_obj(Rhc, Obj, Options) ->
     Bucket = riakc_obj:bucket(Obj),
     Key = riakc_obj:key(Obj),
     VClock = riakc_obj:vclock(Obj),
     delete(Rhc, Bucket, Key, [{vclock, VClock}|Options]).
 
+-spec list_buckets(_) -> none().
 list_buckets(Rhc) ->
     list_buckets(Rhc, undefined).
 
+-spec list_buckets(rhc(),integer()) -> {error, term()} | {ok,[binary()]}.
 list_buckets(Rhc, BucketType) when is_binary(BucketType) ->
     list_buckets(Rhc, BucketType, undefined);
 list_buckets(Rhc, Timeout) ->
     list_buckets(Rhc, undefined, Timeout).
 
+-spec list_buckets(rhc(), undefined | binary(),integer()) -> {error, term()} | {ok,[binary()]}.
 list_buckets(Rhc, BucketType, Timeout) ->
     {ok, ReqId} = stream_list_buckets(Rhc, BucketType, Timeout),
     rhc_listkeys:wait_for_list(ReqId, Timeout).
 
+-spec stream_list_buckets(rhc()) -> {error, term()} | {ok,reference()}.
 stream_list_buckets(Rhc) ->
     stream_list_buckets(Rhc, undefined).
 
+-spec stream_list_buckets(rhc(),_) -> {error, term()} | {ok,reference()}.
 stream_list_buckets(Rhc, BucketType) when is_binary(BucketType) ->
     stream_list_buckets(Rhc, BucketType, undefined);
 stream_list_buckets(Rhc, Timeout) ->
     stream_list_buckets(Rhc, undefined, Timeout).
 
+-spec stream_list_buckets(rhc(), term(), integer()) -> {error, term()} | {ok, reference()}.
 stream_list_buckets(Rhc, BucketType, Timeout) ->
     ParamList0 = [{?Q_BUCKETS, ?Q_STREAM},
                   {?Q_PROPS, ?Q_FALSE}],
@@ -393,16 +404,17 @@ stream_list_buckets(Rhc, BucketType, Timeout) ->
         {error, Error} -> {error, Error}
     end.
 
+-spec list_keys(rhc(),_) -> {error,_} | {ok,[binary()]}.
 list_keys(Rhc, Bucket) ->
     list_keys(Rhc, Bucket, undefined).
 
 %% @doc List the keys in the given bucket.
-%% @spec list_keys(rhc(), bucket(), integer()) -> {ok, [key()]}|{error, term()}
-
+-spec list_keys(rhc(),_,_) -> {error,_} | {ok,[binary()]}.
 list_keys(Rhc, Bucket, Timeout) ->
     {ok, ReqId} = stream_list_keys(Rhc, Bucket, Timeout),
-    rhc_listkeys:wait_for_list(ReqId, ?DEFAULT_TIMEOUT).
+    rhc_listkeys:wait_for_list(ReqId, ?DEFAULT_HTTP_TIMEOUT).
 
+-spec stream_list_keys(rhc(),_) -> {error,_} | {ok,reference()}.
 stream_list_keys(Rhc, Bucket) ->
     stream_list_keys(Rhc, Bucket, undefined).
 
@@ -417,8 +429,7 @@ stream_list_keys(Rhc, Bucket) ->
 %%         <dt>`{error, term()}'</dt>
 %%            <dd>an error occurred</dd>
 %%      </dl>
-%% @spec stream_list_keys(rhc(), bucket(), integer()) ->
-%%          {ok, reference()}|{error, term()}
+-spec stream_list_keys(rhc(),_,_) -> {error, term()} | {ok,reference()}.
 stream_list_keys(Rhc, Bucket, Timeout) ->
     ParamList0 = [{?Q_KEYS, ?Q_STREAM},
                   {?Q_PROPS, ?Q_FALSE}],
@@ -438,27 +449,23 @@ stream_list_keys(Rhc, Bucket, Timeout) ->
     end.
 
 %% @doc Query a secondary index.
-%% @spec get_index(rhc(), bucket(), index(), index_query()) ->
-%%    {ok, index_results()} | {error, term()}
+-spec get_index(rhc(), bucket(), term(), term()) -> {error, term()} | {ok, index_results()}.
 get_index(Rhc, Bucket, Index, Query) ->
     get_index(Rhc, Bucket, Index, Query, []).
 
 %% @doc Query a secondary index.
-%% @spec get_index(rhc(), bucket(), index(), index_query(), index_options()) ->
-%%    {ok, index_results()} | {error, term()}
+-spec get_index(rhc(), bucket(), term(), term(), list()) -> {ok,index_results()} | {error, term()}.
 get_index(Rhc, Bucket, Index, Query, Options) ->
     {ok, ReqId} = stream_index(Rhc, Bucket, Index, Query, Options),
     rhc_index:wait_for_index(ReqId).
 
 %% @doc Query a secondary index, streaming the results back.
-%% @spec stream_index(rhc(), bucket(), index(), index_query()) ->
-%%    {ok, reference()} | {error, term()}
+-spec stream_index(rhc(), bucket(), term(), term()) -> {ok,reference()} | {error,term()}.
 stream_index(Rhc, Bucket, Index, Query) ->
     stream_index(Rhc, Bucket, Index, Query, []).
 
 %% @doc Query a secondary index, streaming the results back.
-%% @spec stream_index(rhc(), bucket(), index(), index_query(), index_options()) ->
-%%    {ok, reference()} | {error, term()}
+-spec stream_index(rhc(),_,_,_,[{atom(),_}]) -> {error,_} | {ok,reference()}.
 stream_index(Rhc, Bucket, Index, Query, Options) ->
     ParamList = rhc_index:query_options([{stream, true}|Options]),
     Url = index_url(Rhc, Bucket, Index, Query, ParamList),
@@ -473,7 +480,7 @@ stream_index(Rhc, Bucket, Index, Query, Options) ->
     end.
 
 %% @doc Get the properties of the given bucket.
-%% @spec get_bucket(rhc(), bucket()) -> {ok, proplist()}|{error, term()}
+-spec get_bucket(rhc(), {binary(), bucket()}) -> {ok, [proplists:property()]} | {error, term()}.
 get_bucket(Rhc, Bucket) ->
     Url = make_url(Rhc, Bucket, undefined, [{?Q_PROPS, ?Q_TRUE},
                                             {?Q_KEYS, ?Q_FALSE}]),
@@ -496,7 +503,7 @@ get_bucket(Rhc, Bucket) ->
 %%          <dd>Whether or not this bucket should allow siblings to
 %%          be created for its keys</dd>
 %%      </dl>
-%% @spec set_bucket(rhc(), bucket(), proplist()) -> ok|{error, term()}
+-spec set_bucket(rhc(),_,list()) -> ok | {error,_}.
 set_bucket(Rhc, Bucket, Props0) ->
     Url = make_url(Rhc, Bucket, undefined, [{?Q_PROPS, ?Q_TRUE}]),
     Headers =  [{"Content-Type", "application/json"}],
@@ -507,6 +514,7 @@ set_bucket(Rhc, Bucket, Props0) ->
         {error, Error}               -> {error, Error}
     end.
 
+-spec reset_bucket(rhc(),_) -> ok | {error,_}.
 reset_bucket(Rhc, Bucket) ->
     Url = make_url(Rhc, Bucket, undefined, [{?Q_PROPS, ?Q_TRUE}]),
     case request(delete, Url, ["204"], [], [], Rhc) of
@@ -516,7 +524,7 @@ reset_bucket(Rhc, Bucket) ->
 
 
 %% @doc Get the properties of the given bucket.
-%% @spec get_bucket_type (rhc(), bucket()) -> {ok, proplist()}|{error, term()}
+-spec get_bucket_type(rhc(),_) -> {error,_} | {ok,[{atom(),_}]}.
 get_bucket_type(Rhc, Type) ->
     Url = make_url(Rhc, {Type, undefined}, undefined, [{?Q_PROPS, ?Q_TRUE},
                                             {?Q_KEYS, ?Q_FALSE}]),
@@ -530,8 +538,7 @@ get_bucket_type(Rhc, Type) ->
     end.
 
 %% @doc Set the properties of the given bucket type.
-%%
-%% @spec set_bucket_type(rhc(), bucket(), proplist()) -> ok|{error, term()}
+-spec set_bucket_type(rhc(),_,list()) -> ok | {error,_}.
 set_bucket_type(Rhc, Type, Props0) ->
     Url = make_url(Rhc, {Type, undefined}, undefined, [{?Q_PROPS, ?Q_TRUE}]),
     Headers =  [{"Content-Type", "application/json"}],
@@ -542,6 +549,7 @@ set_bucket_type(Rhc, Type, Props0) ->
         {error, Error}               -> {error, Error}
     end.
 
+-spec reset_bucket_type(rhc(),_) -> ok | {error,_}.
 reset_bucket_type(Rhc, Type) ->
     Url = make_url(Rhc, {Type, undefined}, undefined, [{?Q_PROPS, ?Q_TRUE}]),
     case request(delete, Url, ["204"], [], [], Rhc) of
@@ -549,23 +557,23 @@ reset_bucket_type(Rhc, Type) ->
         {error, Error}               -> {error, Error}
     end.
 
-%% @equiv mapred(Rhc, Inputs, Query, DEFAULT_TIMEOUT)
+%% @equiv mapred(Rhc, Inputs, Query, DEFAULT_HTTP_TIMEOUT)
+-spec mapred(rhc(), binary(), term()) -> {ok, [{term(), term()}]} | {error, term()}.
 mapred(Rhc, Inputs, Query) ->
-    mapred(Rhc, Inputs, Query, ?DEFAULT_TIMEOUT).
+    mapred(Rhc, Inputs, Query, ?DEFAULT_HTTP_TIMEOUT).
 
 %% @doc Execute a map/reduce query. See {@link
 %%      rhc_mapred:encode_mapred/2} for details of the allowed formats
 %%      for `Inputs' and `Query'.
-%% @spec mapred(rhc(), rhc_mapred:map_input(),
-%%              [rhc_mapred:query_part()], integer())
-%%         -> {ok, [rhc_mapred:phase_result()]}|{error, term()}
+-spec mapred(rhc(), rhc_mapred:map_input(), [rhc_mapred:query_part()], integer()) -> {ok, [rhc_mapred:phase_result()]}|{error, term()}.
 mapred(Rhc, Inputs, Query, Timeout) ->
     {ok, ReqId} = mapred_stream(Rhc, Inputs, Query, self(), Timeout),
     rhc_mapred:wait_for_mapred(ReqId, Timeout).
 
-%% @equiv mapred_stream(Rhc, Inputs, Query, ClientPid, DEFAULT_TIMEOUT)
+%% @equiv mapred_stream(Rhc, Inputs, Query, ClientPid, DEFAULT_HTTP_TIMEOUT)
+-spec mapred_stream(rhc(), binary(), term(), term()) -> {ok,reference()} | {error, term()}.
 mapred_stream(Rhc, Inputs, Query, ClientPid) ->
-    mapred_stream(Rhc, Inputs, Query, ClientPid, ?DEFAULT_TIMEOUT).
+    mapred_stream(Rhc, Inputs, Query, ClientPid, ?DEFAULT_HTTP_TIMEOUT).
 
 %% @doc Stream map/reduce results to a Pid.  Messages sent to the Pid
 %%      will be of the form `{reference(), message()}',
@@ -580,9 +588,9 @@ mapred_stream(Rhc, Inputs, Query, ClientPid) ->
 %%         <dt>`{error, term()}'</dt>
 %%             <dd>an error occurred</dd>
 %%      </dl>
-%% @spec mapred_stream(rhc(), rhc_mapred:mapred_input(),
-%%                     [rhc_mapred:query_phase()], pid(), integer())
-%%          -> {ok, reference()}|{error, term()}
+-spec mapred_stream(rhc(), rhc_mapred:mapred_input(), 
+      [rhc_mapred:query_phase()], pid(), integer()) ->
+	                  {ok, reference()}|{error, term()}.
 mapred_stream(Rhc, Inputs, Query, ClientPid, Timeout) ->
     Url = mapred_url(Rhc),
     StartRef = make_ref(),
@@ -598,13 +606,12 @@ mapred_stream(Rhc, Inputs, Query, ClientPid, Timeout) ->
 
 %% @doc Execute a search query. This command will return an error
 %%      unless executed against a Riak Search cluster.
-%% @spec search(rhc(), bucket(), string()) ->
-%%       {ok, [rhc_mapred:phase_result()]}|{error, term()}
+-spec search(rhc(), bucket(), string()) -> {ok,[rhc_mapred:phase_result()]} | {error,term}.
 search(Rhc, Bucket, SearchQuery) ->
     %% Run a Map/Reduce operation using reduce_identity to get a list
     %% of BKeys.
     IdentityQuery = [{reduce, {modfun, riak_kv_mapreduce, reduce_identity}, none, true}],
-    case search(Rhc, Bucket, SearchQuery, IdentityQuery, ?DEFAULT_TIMEOUT) of
+    case search(Rhc, Bucket, SearchQuery, IdentityQuery, ?DEFAULT_HTTP_TIMEOUT) of
         {ok, [{_, Results}]} ->
             %% Unwrap the results.
             {ok, Results};
@@ -615,42 +622,40 @@ search(Rhc, Bucket, SearchQuery) ->
 %%      query. See {@link rhc_mapred:encode_mapred/2} for details of
 %%      the allowed formats for `MRQuery'. This command will return an error
 %%      unless executed against a Riak Search cluster.
-%% @spec search(rhc(), bucket(), string(),
-%%       [rhc_mapred:query_part()], integer()) ->
-%%       {ok, [rhc_mapred:phase_result()]}|{error, term()}
+-spec search(rhc(), bucket(), string(),[rhc_mapred:query_part()], integer()) ->
+	                          {ok, [rhc_mapred:phase_result()]} | {error,term()}.
 search(Rhc, Bucket, SearchQuery, MRQuery, Timeout) ->
     Inputs = {modfun, riak_search, mapred_search, [Bucket, SearchQuery]},
     mapred(Rhc, Inputs, MRQuery, Timeout).
 
-%% @equiv mapred_bucket(Rhc, Bucket, Query, DEFAULT_TIMEOUT)
+%% @equiv mapred_bucket(Rhc, Bucket, Query, DEFAULT_HTTP_TIMEOUT)
+-spec mapred_bucket(rhc(), bucket(), term()) -> {ok, [rhc_mapred:phase_result()]} | {error,term()}.
 mapred_bucket(Rhc, Bucket, Query) ->
-    mapred_bucket(Rhc, Bucket, Query, ?DEFAULT_TIMEOUT).
+    mapred_bucket(Rhc, Bucket, Query, ?DEFAULT_HTTP_TIMEOUT).
 
 %% @doc Execute a map/reduce query over all keys in the given bucket.
-%% @spec mapred_bucket(rhc(), bucket(), [rhc_mapred:query_phase()],
-%%                     integer())
-%%          -> {ok, [rhc_mapred:phase_result()]}|{error, term()}
+-spec mapred_bucket(rhc(), bucket(), [rhc_mapred:query_phase()], integer()) -> {ok, [rhc_mapred:phase_result()]}|{error, term()}.
 mapred_bucket(Rhc, Bucket, Query, Timeout) ->
     {ok, ReqId} = mapred_bucket_stream(Rhc, Bucket, Query, self(), Timeout),
     rhc_mapred:wait_for_mapred(ReqId, Timeout).
 
 %% @doc Stream map/reduce results over all keys in a bucket to a Pid.
 %%      Similar to {@link mapred_stream/5}
-%% @spec mapred_bucket_stream(rhc(), bucket(),
-%%                     [rhc_mapred:query_phase()], pid(), integer())
-%%          -> {ok, reference()}|{error, term()}
+-spec mapred_bucket_stream(rhc(), bucket(),
+                     [rhc_mapred:query_phase()], pid(), integer())
+          -> {ok, reference()}|{error, term()}.
 mapred_bucket_stream(Rhc, Bucket, Query, ClientPid, Timeout) ->
     mapred_stream(Rhc, Bucket, Query, ClientPid, Timeout).
 
 %% @doc Fetches the representation of a convergent datatype from Riak.
--spec fetch_type(rhc(), {BucketType::binary(), Bucket::binary()}, Key::binary()) ->
+-spec fetch_type(rhc(), {binary(), bucket()}, key()) ->
                         {ok, riakc_datatype:datatype()} | {error, term()}.
 fetch_type(Rhc, BucketAndType, Key) ->
     fetch_type(Rhc, BucketAndType, Key, []).
 
 %% @doc Fetches the representation of a convergent datatype from Riak,
 %% using the given request options.
--spec fetch_type(rhc(), {BucketType::binary(), Bucket::binary()}, Key::binary(), [proplists:property()]) ->
+-spec fetch_type(rhc(), {binary(), bucket()}, key(), [proplists:property()]) ->
                         {ok, riakc_datatype:datatype()} | {error, term()}.
 fetch_type(Rhc, BucketAndType, Key, Options) ->
     Query = fetch_type_q_params(Rhc, Options),
@@ -664,17 +669,18 @@ fetch_type(Rhc, BucketAndType, Key, Options) ->
 
 %% @doc Updates the convergent datatype in Riak with local
 %% modifications stored in the container type.
--spec update_type(rhc(), {BucketType::binary(), Bucket::binary()}, Key::binary(),
+-spec update_type(rhc(), {binary(), bucket()}, key(),
                   Update::riakc_datatype:update(term())) ->
-                         ok | {ok, Key::binary()} | {ok, riakc_datatype:datatype()} |
-                         {ok, Key::binary(), riakc_datatype:datatype()} | {error, term()}.
+                         ok | {ok, key()} | {ok, riakc_datatype:datatype()} |
+                         {ok, key(), riakc_datatype:datatype()} | {error, term()}.
+
 update_type(Rhc, BucketAndType, Key, Update) ->
     update_type(Rhc, BucketAndType, Key, Update, []).
 
--spec update_type(rhc(), {BucketType::binary(), Bucket::binary()}, Key::binary(),
+-spec update_type(rhc(), {binary(), bucket()}, key(),
                   Update::riakc_datatype:update(term()), [proplists:property()]) ->
-                         ok | {ok, Key::binary()} | {ok, riakc_datatype:datatype()} |
-                         {ok, Key::binary(), riakc_datatype:datatype()} | {error, term()}.
+                         ok | {ok, key()} | {ok, riakc_datatype:datatype()} |
+                         {ok, key(), riakc_datatype:datatype()} | {error, term()}.
 update_type(_Rhc, _BucketAndType, _Key, undefined, _Options) ->
     {error, unmodified};
 update_type(Rhc, BucketAndType, Key, {Type, Op, Context}, Options) ->
@@ -707,7 +713,7 @@ update_type(Rhc, BucketAndType, Key, {Type, Op, Context}, Options) ->
 %% updates the datatype in Riak. If an existing value is not found,
 %% but you want the updates to apply anyway, use the 'create' option.
 -spec modify_type(rhc(), fun((riakc_datatype:datatype()) -> riakc_datatype:datatype()),
-                  {BucketType::binary(), Bucket::binary()}, Key::binary(), [proplists:property()]) ->
+                  {BucketType::binary(), bucket()}, key(), [proplists:property()]) ->
                          ok | {ok, riakc_datatype:datatype()} | {error, term()}.
 modify_type(Rhc, Fun, BucketAndType, Key, Options) ->
     Create = proplists:get_value(create, Options, true),
@@ -730,7 +736,7 @@ modify_type(Rhc, Fun, BucketAndType, Key, Options) ->
 
 %% @doc Get the client ID to use, given the passed options and client.
 %%      Choose the client ID in Options before the one in the client.
-%% @spec client_id(rhc(), proplist()) -> client_id()
+-spec client_id(rhc(), list()) -> any().
 client_id(#rhc{options=RhcOptions}, Options) ->
     case proplists:get_value(client_id, Options) of
         undefined ->
@@ -740,7 +746,7 @@ client_id(#rhc{options=RhcOptions}, Options) ->
     end.
 
 %% @doc Generate a random client ID.
-%% @spec random_client_id() -> client_id()
+-spec random_client_id() -> string().
 random_client_id() ->
     {{Y,Mo,D},{H,Mi,S}} = erlang:universaltime(),
     {_,_,NowPart} = now(),
@@ -748,7 +754,7 @@ random_client_id() ->
     base64:encode_to_string(<<Id:32>>).
 
 %% @doc Assemble the root URL for the given client
-%% @spec root_url(rhc()) -> iolist()
+-spec root_url(rhc()) -> iolist().
 root_url(#rhc{ip=Ip, port=Port, options=Opts}) ->
     Proto = case proplists:get_value(is_ssl, Opts) of
         true ->
@@ -759,21 +765,23 @@ root_url(#rhc{ip=Ip, port=Port, options=Opts}) ->
     [Proto, "://",Ip,":",integer_to_list(Port),"/"].
 
 %% @doc Assemble the URL for the map/reduce resource
-%% @spec mapred_url(rhc()) -> iolist()
+-spec mapred_url(rhc()) -> iolist().
 mapred_url(Rhc) ->
     binary_to_list(iolist_to_binary([root_url(Rhc), "mapred/?chunked=true"])).
 
 %% @doc Assemble the URL for the ping resource
-%% @spec ping_url(rhc()) -> iolist()
+-spec ping_url(rhc()) -> iolist().
 ping_url(Rhc) ->
     binary_to_list(iolist_to_binary([root_url(Rhc), "ping/"])).
 
 %% @doc Assemble the URL for the stats resource
-%% @spec stats_url(rhc()) -> iolist()
+-spec stats_url(rhc()) -> iolist().
 stats_url(Rhc) ->
     binary_to_list(iolist_to_binary([root_url(Rhc), "stats/"])).
 
 %% @doc Assemble the URL for the 2I resource
+-spec index_url(rhc(),{binary(), bucket()}, term(), term(), list()) ->
+	         list() | {error, term()} | {incomplete, list(), binary()}.
 index_url(Rhc, BucketAndType, Index, Query, Params) ->
     {Type, Bucket} = extract_bucket_type(BucketAndType),
     QuerySegments = index_query_segments(Query),
@@ -786,6 +794,7 @@ index_url(Rhc, BucketAndType, Index, Query, Params) ->
        [ ["?", mochiweb_util:urlencode(Params)] || Params =/= []]]).
 
 
+-spec index_query_segments(_) -> [binary() | string()].
 index_query_segments(B) when is_binary(B) ->
     [ B ];
 index_query_segments(I) when is_integer(I) ->
@@ -798,6 +807,9 @@ index_query_segments({I1, I2}) when is_integer(I1),
     [ integer_to_list(I1), integer_to_list(I2) ];
 index_query_segments(_) -> [].
 
+-spec index_name({binary_index, term()} | 
+                 {integer_index, term()} | 
+                 term()) -> term().
 index_name({binary_index, B}) ->
     [B, "_bin"];
 index_name({integer_index, I}) ->
@@ -805,9 +817,8 @@ index_name({integer_index, I}) ->
 index_name(Idx) -> Idx.
 
 
-
 %% @doc Assemble the URL for the given bucket and key
-%% @spec make_url(rhc(), bucket(), key(), proplist()) -> iolist()
+-spec make_url(rhc(), {binary(),bucket() | undefined}, key() | undefined, list()) -> iolist().
 make_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
     {Type, Bucket} = extract_bucket_type(BucketAndType),
     {IsKeys, IsProps, IsBuckets} = detect_bucket_flags(Query),
@@ -832,6 +843,7 @@ make_counter_url(Rhc, Bucket, Key, Query) ->
          <<"buckets">>, "/", Bucket, "/", <<"counters">>, "/", Key, "?",
          [ [mochiweb_util:urlencode(Query)] || Query =/= []]])).
 
+-spec make_datatype_url(rhc(),_, key(),list()) -> string() | {error, list(), iolist()} | {incomplete, list(), binary()}.
 make_datatype_url(Rhc, BucketAndType, Key, Query) ->
     case extract_bucket_type(BucketAndType) of
         {undefined, _B} ->
@@ -846,6 +858,7 @@ make_datatype_url(Rhc, BucketAndType, Key, Query) ->
     end.
 
 %% @doc send an ibrowse request
+-spec request(atom(), term(), list(), list(), term(), rhc()) -> any().
 request(Method, Url, Expect, Headers, Body, Rhc) ->
     AuthHeader = get_auth_header(Rhc#rhc.options),
     SSLOptions = get_ssl_options(Rhc#rhc.options),
@@ -862,6 +875,7 @@ request(Method, Url, Expect, Headers, Body, Rhc) ->
     end.
 
 %% @doc stream an ibrowse request
+-spec request_stream(pid(), atom(), string(), list(), term(), rhc()) -> any().
 request_stream(Pid, Method, Url, Headers, Body, Rhc) ->
     AuthHeader = get_auth_header(Rhc#rhc.options),
     SSLOptions = get_ssl_options(Rhc#rhc.options),
@@ -875,17 +889,20 @@ request_stream(Pid, Method, Url, Headers, Body, Rhc) ->
     end.
 
 %% @doc Get the default options for the given client
-%% @spec options(rhc()) -> proplist()
+
+-spec options(rhc()) -> any().
 options(#rhc{options=Options}) ->
     Options.
 
 %% @doc Extract the list of query parameters to use for a GET
-%% @spec get_q_params(rhc(), proplist()) -> proplist()
+
+-spec get_q_params(rhc(),list()) -> list().
 get_q_params(Rhc, Options) ->
     options_list([r,pr,timeout], Options ++ options(Rhc)).
 
 %% @doc Extract the list of query parameters to use for a PUT
-%% @spec put_q_params(rhc(), proplist()) -> proplist()
+
+-spec put_q_params(rhc(),list()) -> list().
 put_q_params(Rhc, Options) ->
     options_list([r,w,dw,pr,pw,timeout,asis,{return_body,"returnbody"}],
                  Options ++ options(Rhc)).
@@ -897,24 +914,28 @@ counter_q_params(Rhc, Options) ->
     options_list([r, pr, w, pw, dw, returnvalue, basic_quorum, notfound_ok], Options ++ options(Rhc)).
 
 %% @doc Extract the list of query parameters to use for a DELETE
-%% @spec delete_q_params(rhc(), proplist()) -> proplist()
+
+-spec delete_q_params(rhc(),list()) -> list().
 delete_q_params(Rhc, Options) ->
     options_list([r,w,dw,pr,pw,rw,timeout], Options ++ options(Rhc)).
 
+-spec fetch_type_q_params(rhc(),list()) -> list().
 fetch_type_q_params(Rhc, Options) ->
     options_list([r,pr,basic_quorum,notfound_ok,timeout,include_context], Options ++ options(Rhc)).
 
+-spec update_type_q_params(rhc(),list()) -> list().
 update_type_q_params(Rhc, Options) ->
     options_list([r,w,dw,pr,pw,basic_quorum,notfound_ok,timeout,include_context,{return_body, "returnbody"}],
                  Options ++ options(Rhc)).
 
 %% @doc Extract the options for the given `Keys' from the possible
 %%      list of `Options'.
-%% @spec options_list([Key::atom()|{Key::atom(),Alias::string()}],
-%%                    proplist()) -> proplist()
+
+-spec options_list(list(),_) -> list().
 options_list(Keys, Options) ->
     options_list(Keys, Options, []).
 
+-spec options_list(list(), [proplist:property()], list()) -> list().
 options_list([K|Rest], Options, Acc) ->
     {Key,Alias} = case K of
                       {_, _} -> K;
@@ -930,12 +951,15 @@ options_list([], _, Acc) ->
 
 %% @doc Convert a stats-resource response to an erlang-term server
 %%      information proplist.
+-spec erlify_server_info(list()) -> [{node,_} | {server_version,_}].
 erlify_server_info(Props) ->
     lists:flatten([ erlify_server_info(K, V) || {K, V} <- Props ]).
+-spec erlify_server_info(_,_) -> [] | {node, term()} | {server_version, term()}.
 erlify_server_info(<<"nodename">>, Name) -> {node, Name};
 erlify_server_info(<<"riak_kv_version">>, Vsn) -> {server_version, Vsn};
 erlify_server_info(_Ignore, _) -> [].
 
+-spec get_auth_header(list()) -> [{string(), string()}].
 get_auth_header(Options) ->
     case lists:keyfind(credentials, 1, Options) of
         {credentials, User, Password} ->
@@ -946,6 +970,7 @@ get_auth_header(Options) ->
             []
     end.
 
+-spec get_ssl_options([proplists:property()]) -> [{is_ssl,true} | {ssl_options,list()}].
 get_ssl_options(Options) ->
     case proplists:get_value(is_ssl, Options) of
         true ->
@@ -959,6 +984,8 @@ get_ssl_options(Options) ->
             []
     end.
 
+-spec extract_bucket_type({binary(), bucket()} | bucket()) -> 
+                           {undefined | binary() , bucket()}.
 extract_bucket_type({<<"default">>, B}) ->
     {undefined, B};
 extract_bucket_type({T,B}) ->
@@ -966,6 +993,7 @@ extract_bucket_type({T,B}) ->
 extract_bucket_type(B) ->
     {undefined, B}.
 
+-spec detect_bucket_flags(list()) -> {false,boolean(),boolean()} | {true,boolean(),boolean()}.
 detect_bucket_flags(Query) ->
     {proplists:get_value(?Q_KEYS, Query, ?Q_FALSE) =/= ?Q_FALSE,
      proplists:get_value(?Q_PROPS, Query, ?Q_FALSE) =/= ?Q_FALSE,

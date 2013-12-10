@@ -30,6 +30,7 @@
 
 -include("raw_http.hrl").
 -include("rhc.hrl").
+-include_lib("riakc/include/riakc.hrl").
 
 -record(parse_state, {buffer=[],    %% unused characters in reverse order
                       brace=0,      %% depth of braces in current partial
@@ -40,10 +41,13 @@
 %% @doc Collect all keylist results, and provide them as one list
 %%      instead of streaming to a Pid.
 %% @spec wait_for_list(term(), integer()) ->
-%%            {ok, [key()]}|{error, term()}
+%%            {ok, [key()]}|{error, term()}	
+-spec wait_for_list(term(), integer()) -> {ok, [key()]}|{error, term()}.
+
 wait_for_list(ReqId, Timeout) ->
     wait_for_list(ReqId,Timeout,[]).
 %% @private
+-spec wait_for_list(_,_,[any()]) -> {'error',_} | {'ok',[any()]}.
 wait_for_list(ReqId, _Timeout0, Acc) ->
     receive
         {ReqId, done} -> 
@@ -56,6 +60,7 @@ wait_for_list(ReqId, _Timeout0, Acc) ->
 
 %% @doc first stage of ibrowse response handling - just waits to be
 %%      told what ibrowse request ID to expect
+-spec list_acceptor(atom() | pid() | port() | {atom(),atom()},_,_) -> {_,'done' | {'error',_}}.
 list_acceptor(Pid, PidRef, Type) ->
     receive
         {ibrowse_req_id, PidRef, IbrowseRef} ->
@@ -64,6 +69,7 @@ list_acceptor(Pid, PidRef, Type) ->
 
 %% @doc main loop for ibrowse response handling - parses response and
 %%      sends messaged to client Pid
+-spec list_acceptor(atom() | pid() | port() | {atom(),atom()},_,_,#parse_state{},_) -> {_,'done' | {'error',_}}.
 list_acceptor(Pid,PidRef,IbrowseRef,ParseState,Type) ->
     receive
         {ibrowse_async_response_end, IbrowseRef} ->
@@ -101,11 +107,13 @@ list_acceptor(Pid,PidRef,IbrowseRef,ParseState,Type) ->
             end
     end.
 
+-spec is_empty(#parse_state{}) -> boolean().
 is_empty(#parse_state{buffer=[],brace=0,quote=false,escape=false}) ->
     true;
 is_empty(#parse_state{}) ->
     false.
 
+-spec try_parse(binary(),#parse_state{}) -> {[any()],#parse_state{}}.
 try_parse(Data, #parse_state{buffer=B, brace=D, quote=Q, escape=E}) ->
     Parse = try_parse(binary_to_list(Data), B, D, Q, E),
     {KeyLists, NewParseState} =
@@ -135,6 +143,7 @@ try_parse(Data, #parse_state{buffer=B, brace=D, quote=Q, escape=E}) ->
           Parse),
     {lists:flatten(KeyLists), NewParseState}.
 
+-spec try_parse([byte()],_,_,_,_) -> [[any(),...] | #parse_state{},...].
 try_parse([], B, D, Q, E) ->
     [#parse_state{buffer=B, brace=D, quote=Q, escape=E}];
 try_parse([_|Rest],B,D,Q,true) ->

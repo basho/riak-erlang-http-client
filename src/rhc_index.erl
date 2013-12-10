@@ -38,6 +38,7 @@
 query_options(Options) ->
     lists:flatmap(fun query_option/1, Options).
 
+-spec query_option(_) -> [{[1..255,...], list()}].
 query_option({timeout, N}) when is_integer(N) ->
     [{?Q_TIMEOUT, integer_to_list(N)}];
 query_option({stream, B}) when is_boolean(B) ->
@@ -54,10 +55,11 @@ query_option(_) ->
     [].
 
 %% @doc Collects 2i query results on behalf of the caller.
--spec wait_for_index(reference()) -> {ok, ?INDEX_RESULTS{}} | {error, term()}.
+-spec wait_for_index(reference()) -> {ok, index_results()} | {error, term()}.
 wait_for_index(ReqId) ->
     wait_for_index(ReqId, []).
 
+-spec wait_for_index(_,[index_stream_result()]) -> {'error',_} | {'ok', index_results()}.
 wait_for_index(ReqId, Acc) ->
     receive
         {ReqId, {done, Continuation}} ->
@@ -70,12 +72,14 @@ wait_for_index(ReqId, Acc) ->
             wait_for_index(ReqId, [Res|Acc])
     end.
 
+-spec collect_results([index_stream_result()],'undefined' | binary()) -> index_results().
 collect_results(Acc, Continuation) ->
     lists:foldl(fun merge_index_results/2,
                 ?INDEX_RESULTS{keys=[],
                                terms=[],
                                continuation=Continuation}, Acc).
 
+-spec merge_index_results(index_stream_result(),index_results()) -> index_results().
 merge_index_results(?INDEX_STREAM_RESULT{keys=KL},
                     ?INDEX_RESULTS{keys=K0}=Acc) when is_list(KL) ->
     Acc?INDEX_RESULTS{keys=KL++K0};
@@ -92,6 +96,7 @@ index_acceptor(Pid, PidRef) ->
             index_acceptor(Pid, PidRef, IbrowseRef)
     end.
 
+-spec index_acceptor(atom() | pid() | port() | {atom(),atom()},_,_) -> {_,'done' | {'error','timeout' | {_,_}}}.
 index_acceptor(Pid, PidRef, IBRef) ->
     receive
         {ibrowse_async_headers, IBRef, Status, Headers} ->
@@ -113,6 +118,7 @@ index_acceptor(Pid, PidRef, IBRef) ->
 %% @doc Receives multipart chunks from webmachine_multipart and parses
 %% them into results that can be sent to Pid.
 %% @private
+-spec stream_parts_acceptor(atom() | pid() | port() | {atom(),atom()}, term(), 'done_parts' | term()) -> {term(),'done'}.
 stream_parts_acceptor(Pid, PidRef, done_parts) ->
     Pid ! {PidRef, done};
 stream_parts_acceptor(Pid, PidRef, {{_Name, _Param, Part},Next}) ->
@@ -127,6 +133,7 @@ stream_parts_acceptor(Pid, PidRef, {{_Name, _Param, Part},Next}) ->
 %% @doc Sends keys or terms to the Pid if they are present in the
 %% result, otherwise sends nothing.
 %% @private
+-spec maybe_send_results(term(), term(), term(), term()) -> 'ok' | {_,index_stream_result()}.
 maybe_send_results(_Pid, _PidRef, undefined, undefined) -> ok;
 maybe_send_results(Pid, PidRef, Keys, Results) ->
     Pid ! {PidRef, ?INDEX_STREAM_RESULT{keys=Keys,
@@ -135,6 +142,7 @@ maybe_send_results(Pid, PidRef, Keys, Results) ->
 %% @doc Sends the continuation to Pid if it is present in the result,
 %% otherwise sends nothing.
 %% @private
+-spec maybe_send_continuation(_,_,_) -> 'ok' | {_,{'done',_}}.
 maybe_send_continuation(_Pid, _PidRef, undefined) -> ok;
 maybe_send_continuation(Pid, PidRef, Continuation) ->
             Pid ! {PidRef, {done, Continuation}}.
@@ -142,6 +150,7 @@ maybe_send_continuation(Pid, PidRef, Continuation) ->
 %% @doc "next" fun for the webmachine_multipart streamer - waits for
 %%      an ibrowse message, and then returns it to the streamer for processing
 %% @private
+-spec stream_parts_helper(_,_,_,boolean()) -> fun(() -> {_,'done' | fun(() -> any())}).
 stream_parts_helper(Pid, PidRef, IbrowseRef, First) ->
     fun() ->
             receive

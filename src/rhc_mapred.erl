@@ -48,10 +48,12 @@
 %%                   {jsanon, {bucket(), key()}}|
 %%                   {jsanon, binary()}
 %% @type linkspec() = binary()|'_'
+-spec encode_mapred(binary() | [[any(),...] | {binary() | {_,_},_}] | {binary(),binary()} | {'index',binary() | [[any(),...] | {_,_}] | {binary(),binary()} | {'index',binary() | [any()] | {_,_} | {_,_,_,_} | {_,_,_,_,_},{_,_},_} | {'modfun',atom(),atom(),_} | {'index',binary() | [any()] | {_,_} | {_,_,_,_} | {_,_,_,_,_},{_,_},_,_},{'binary_index',[any()]} | {'integer_index',[any()]},_} | {'modfun',atom(),atom(),_} | {'index',binary() | [[any(),...] | {_,_}] | {binary(),binary()} | {'index',binary() | [any()] | {_,_} | {_,_,_,_} | {_,_,_,_,_},{_,_},_} | {'modfun',atom(),atom(),_} | {'index',binary() | [any()] | {_,_} | {_,_,_,_} | {_,_,_,_,_},{_,_},_,_},{'binary_index',[any()]} | {'integer_index',[any()]},_,_},[{'link',_,_,_} | {'map',{_,_} | {_,_,_},_,_} | {'reduce',{_,_} | {_,_,_},_,_}]) -> any().
 encode_mapred(Inputs, Query) ->
     mochijson2:encode(
       {struct, [{<<"inputs">>, encode_mapred_inputs(Inputs)},
                 {<<"query">>, encode_mapred_query(Query)}]}).
+-spec encode_mapred_inputs(binary() | [[any(),...] | {binary() | {_,_},_}] | {binary(),binary()} | {'index',binary() | [[any(),...] | {_,_}] | {binary(),binary()} | {'index',binary() | [any()] | {_,_} | {_,_,_,_} | {_,_,_,_,_},{_,_},_} | {'modfun',atom(),atom(),_} | {'index',binary() | [any()] | {_,_} | {_,_,_,_} | {_,_,_,_,_},{_,_},_,_},{'binary_index',[any()]} | {'integer_index',[any()]},_} | {'modfun',atom(),atom(),_} | {'index',binary() | [[any(),...] | {_,_}] | {binary(),binary()} | {'index',binary() | [any()] | {_,_} | {_,_,_,_} | {_,_,_,_,_},{_,_},_} | {'modfun',atom(),atom(),_} | {'index',binary() | [any()] | {_,_} | {_,_,_,_} | {_,_,_,_,_},{_,_},_,_},{'binary_index',[any()]} | {'integer_index',[any()]},_,_}) -> binary() | [binary() | [any(),...]] | {'struct',[{_,_},...]}.
 encode_mapred_inputs({BucketType, Bucket}) when is_binary(BucketType),
                                                 is_binary(Bucket) ->
     [BucketType, Bucket];
@@ -77,6 +79,7 @@ encode_mapred_inputs({modfun, Module, Function, Options}) ->
 %%        [Bucket, Key]
 %%      or
 %%        [Bucket, Key, KeyData]
+-spec normalize_mapred_input([any(),...] | {binary() | {binary() | {binary(),binary()},binary()},_}) -> [any(),...].
 normalize_mapred_input({Bucket, Key})
   when is_binary(Bucket), is_binary(Key) ->
     [Bucket, Key];
@@ -96,9 +99,11 @@ normalize_mapred_input([Bucket, Key, KeyData])
   when is_binary(Bucket), is_binary(Key) ->
     [Bucket, Key, KeyData].
 
+-spec encode_mapred_query([{'link',_,_,_} | {'map',{_,_} | {_,_,_},_,_} | {'reduce',{_,_} | {_,_,_},_,_}]) -> [{'struct',[any(),...]}].
 encode_mapred_query(Query) when is_list(Query) ->
     [ encode_mapred_phase(P) || P <- Query ].
 
+-spec encode_mapred_phase({'link',_,_,_} | {'map',{'jsanon',_} | {'jsfun',_} | {'modfun',atom(),atom()},_,_} | {'reduce',{'jsanon',_} | {'jsfun',_} | {'modfun',atom(),atom()},_,_}) -> {'struct',[{<<_:24,_:_*8>>,{_,_}},...]}.
 encode_mapred_phase({MR, Fundef, Arg, Keep}) when MR =:= map;
                                                   MR =:= reduce ->
     Type = if MR =:= map -> <<"map">>;
@@ -151,11 +156,13 @@ encode_mapred_phase({link, Bucket, Tag, Keep}) ->
 %% @spec wait_for_mapred(term(), integer()) ->
 %%            {ok, [phase_result()]}|{error, term()}
 %% @type phase_result() = {integer(), [term()]}
+-spec wait_for_mapred(reference(),'infinity' | non_neg_integer()) -> {'error',_} | {'ok',[{_,_}]}.
 wait_for_mapred(ReqId, Timeout) ->
     wait_for_mapred_first(ReqId, Timeout).
 
 %% Wait for the first mapred result, so we know at least one phase
 %% that will be delivering results.
+-spec wait_for_mapred_first(reference(),'infinity' | non_neg_integer()) -> {'error',_} | {'ok',[{_,_}]}.
 wait_for_mapred_first(ReqId, Timeout) ->
     case receive_mapred(ReqId, Timeout) of
         done ->
@@ -173,6 +180,7 @@ wait_for_mapred_first(ReqId, Timeout) ->
 %% of accumulating a single phases's outputs will be more efficient
 %% than the repeated orddict:append_list/3 used when accumulating
 %% outputs from multiple phases.
+-spec wait_for_mapred_one(reference(),'infinity' | non_neg_integer(),integer(),_) -> {'error',_} | {'ok',[{_,_}]}.
 wait_for_mapred_one(ReqId, Timeout, Phase, Acc) ->
     case receive_mapred(ReqId, Timeout) of
         done ->
@@ -192,15 +200,18 @@ wait_for_mapred_one(ReqId, Timeout, Phase, Acc) ->
     end.
 
 %% Single-phase outputs are kept as a reverse list of results.
+-spec acc_mapred_one([any()],_) -> any().
 acc_mapred_one([R|Rest], Acc) ->
     acc_mapred_one(Rest, [R|Acc]);
 acc_mapred_one([], Acc) ->
     Acc.
 
+-spec finish_mapred_one(integer(),[any()]) -> [{integer(),[any()]},...].
 finish_mapred_one(Phase, Acc) ->
     [{Phase, lists:reverse(Acc)}].
 
 %% Tracking outputs from multiple phases.
+-spec wait_for_mapred_many(reference(),'infinity' | non_neg_integer(),[tuple(),...]) -> {'error',_} | {'ok',[{_,_}]}.
 wait_for_mapred_many(ReqId, Timeout, Acc) ->
     case receive_mapred(ReqId, Timeout) of
         done ->
@@ -216,6 +227,7 @@ wait_for_mapred_many(ReqId, Timeout, Acc) ->
 
 %% Many-phase outputs are kepts as a proplist of reversed lists of
 %% results.
+-spec acc_mapred_many(integer(),[any()],[tuple(),...]) -> [tuple(),...].
 acc_mapred_many(Phase, Res, Acc) ->
     case lists:keytake(Phase, 1, Acc) of
         {value, {Phase, PAcc}, RAcc} ->
@@ -224,12 +236,14 @@ acc_mapred_many(Phase, Res, Acc) ->
             [{Phase,acc_mapred_one(Res,[])}|Acc]
     end.
 
+-spec finish_mapred_many([tuple(),...]) -> [{_,[any()]}].
 finish_mapred_many(Acc) ->
     [ {P, lists:reverse(A)} || {P, A} <- lists:keysort(1, Acc) ].
 
 %% Receive one mapred message.
 -spec receive_mapred(reference(), timeout()) ->
          done | {mapred, integer(), [term()]} | {error, term()} | timeout.
+
 receive_mapred(ReqId, Timeout) ->
     receive {ReqId, Msg} ->
             %% Msg should be `done', `{mapred, Phase, Results}', or
@@ -241,6 +255,7 @@ receive_mapred(ReqId, Timeout) ->
 
 %% @doc first stage of ibrowse response handling - just waits to be
 %%      told what ibrowse request ID to expect
+-spec mapred_acceptor(atom() | pid() | port() | {atom(),atom()},_,'infinity' | non_neg_integer()) -> {_,'done' | {'error','timeout' | {_,_}}}.
 mapred_acceptor(Pid, PidRef, Timeout) ->
     receive
         {ibrowse_req_id, PidRef, IbrowseRef} ->
@@ -251,6 +266,7 @@ mapred_acceptor(Pid, PidRef, Timeout) ->
 
 %% @doc second stage of ibrowse response handling - waits for headers
 %%      and extracts the boundary of the multipart/mixed message
+-spec mapred_acceptor(atom() | pid() | port() | {atom(),atom()},_,'infinity' | non_neg_integer(),_) -> {_,'done' | {'error','timeout' | {_,_}}}.
 mapred_acceptor(Pid,PidRef,Timeout,IbrowseRef) ->
     receive
         {ibrowse_async_headers, IbrowseRef, Status, Headers} ->
@@ -275,6 +291,7 @@ mapred_acceptor(Pid,PidRef,Timeout,IbrowseRef) ->
 %% @doc driver of the webmachine_multipart streamer - handles results
 %%      of the parsing process (sends them to the client) and polls for
 %%      the next part
+-spec stream_parts_acceptor(atom() | pid() | port() | {atom(),atom()},_,'done_parts' | {{_,_,binary() | maybe_improper_list(binary() | maybe_improper_list(any(),binary() | []) | byte(),binary() | [])},fun(() -> any())}) -> {_,'done'}.
 stream_parts_acceptor(Pid,PidRef,done_parts) ->
     Pid ! {PidRef, done};
 stream_parts_acceptor(Pid,PidRef,{{_Name, _Param, Part},Next}) ->
@@ -286,6 +303,7 @@ stream_parts_acceptor(Pid,PidRef,{{_Name, _Param, Part},Next}) ->
 
 %% @doc "next" fun for the webmachine_multipart streamer - waits for
 %%      an ibrowse message, and then returns it to the streamer for processing
+-spec stream_parts_helper(_,_,_,_,boolean()) -> fun(() -> {_,'done' | fun(() -> any())}).
 stream_parts_helper(Pid, PidRef, Timeout, IbrowseRef, First) ->              
     fun() ->
             receive

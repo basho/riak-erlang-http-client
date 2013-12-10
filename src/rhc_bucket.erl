@@ -29,8 +29,10 @@
 
 -include("raw_http.hrl").
 
+-spec erlify_props([any()]) -> [{atom(),_}].
 erlify_props(Props) ->
     lists:flatten([ erlify_prop(K, V) || {K, V} <- Props ]).
+-spec erlify_prop(_,_) -> [] | {atom(),_}.
 erlify_prop(?JSON_ALLOW_MULT, AM) -> {allow_mult, AM};
 erlify_prop(?JSON_BACKEND, B) -> {backend, B};
 erlify_prop(?JSON_BASIC_Q, B) -> {basic_quorum, B};
@@ -55,12 +57,14 @@ erlify_prop(?JSON_W, W) -> {w, erlify_quorum(W)};
 erlify_prop(?JSON_YOUNG_VC, I) -> {young_vclock, I};
 erlify_prop(_Ignore, _) -> [].
 
+-spec erlify_quorum(_) -> 'all' | 'one' | 'quorum' | 'undefined' | integer().
 erlify_quorum(?JSON_ALL) -> all;
 erlify_quorum(?JSON_QUORUM) -> quorum;
 erlify_quorum(?JSON_ONE) -> one;
 erlify_quorum(I) when is_integer(I) -> I;
 erlify_quorum(_) -> undefined.
 
+-spec erlify_repl(_) -> 'false' | 'fullsync' | 'realtime' | 'true' | 'undefined'.
 erlify_repl(?JSON_REALTIME) -> realtime;
 erlify_repl(?JSON_FULLSYNC) -> fullsync;
 erlify_repl(?JSON_BOTH) -> true; %% both is equivalent to true, but only works in 1.2+
@@ -68,6 +72,7 @@ erlify_repl(true) -> true;
 erlify_repl(false) -> false;
 erlify_repl(_) -> undefined.
 
+-spec erlify_chash({'struct',[{<<_:24>>,binary()},...]}) -> {atom(),atom()}.
 erlify_chash({struct, [{?JSON_MOD, Mod}, {?JSON_FUN, Fun}]}=Struct) ->
     try
         {binary_to_existing_atom(Mod, utf8), binary_to_existing_atom(Fun, utf8)}
@@ -77,12 +82,15 @@ erlify_chash({struct, [{?JSON_MOD, Mod}, {?JSON_FUN, Fun}]}=Struct) ->
             {binary_to_atom(Mod, utf8), binary_to_atom(Fun, utf8)}
     end.
 
+-spec erlify_linkfun({'struct',[{<<_:24>>,binary()},...]}) -> {'modfun',atom(),atom()}.
 erlify_linkfun(Struct) ->
     {Mod, Fun} = erlify_chash(Struct),
     {modfun, Mod, Fun}.
 
+-spec httpify_props(list()) -> [{<<_:8,_:_*8>>,_}].
 httpify_props(Props) ->
     lists:flatten([ httpify_prop(K, V) || {K, V} <- Props ]).
+-spec httpify_prop(_,_) -> [] | {<<_:8,_:_*8>>,_}.
 httpify_prop(allow_mult, AM) -> {?JSON_ALLOW_MULT, AM};
 httpify_prop(backend, B) -> {?JSON_BACKEND, B};
 httpify_prop(basic_quorum, B) -> {?JSON_BASIC_Q, B};
@@ -107,6 +115,7 @@ httpify_prop(w, Q) -> {?JSON_W, Q};
 httpify_prop(young_vclock, VC) -> {?JSON_YOUNG_VC, VC};
 httpify_prop(_Ignore, _) -> [].
 
+-spec httpify_modfun({atom(),atom()} | {'modfun',atom(),atom()}) -> {'struct',[{_,_},...]}.
 httpify_modfun({modfun, M, F}) ->
     httpify_modfun({M, F});
 httpify_modfun({M, F}) ->
