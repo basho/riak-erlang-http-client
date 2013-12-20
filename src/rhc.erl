@@ -52,7 +52,6 @@
          reset_bucket/2,
          get_bucket_type/2,
          set_bucket_type/3,
-         reset_bucket_type/2,
          mapred/3,mapred/4,
          mapred_stream/4, mapred_stream/5,
          mapred_bucket/3, mapred_bucket/4,
@@ -538,13 +537,6 @@ set_bucket_type(Rhc, Type, Props0) ->
     Props = rhc_bucket:httpify_props(Props0),
     Body = mochijson2:encode({struct, [{?Q_PROPS, {struct, Props}}]}),
     case request(put, Url, ["204"], Headers, Body, Rhc) of
-        {ok, "204", _Headers, _Body} -> ok;
-        {error, Error}               -> {error, Error}
-    end.
-
-reset_bucket_type(Rhc, Type) ->
-    Url = make_url(Rhc, {Type, undefined}, undefined, [{?Q_PROPS, ?Q_TRUE}]),
-    case request(delete, Url, ["204"], [], [], Rhc) of
         {ok, "204", _Headers, _Body} -> ok;
         {error, Error}               -> {error, Error}
     end.
