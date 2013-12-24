@@ -48,8 +48,14 @@ query_option({continuation, C}) when is_binary(C) ->
     [{?Q_CONTINUATION, binary_to_list(C)}];
 query_option({continuation, C}) when is_list(C) ->
     [{?Q_CONTINUATION, C}];
+query_option({term_regex, C}) when is_binary(C) ->
+    [{?Q_TERM_REGEX, binary_to_list(C)}];
+query_option({term_regex, C}) when is_list(C) ->
+    [{?Q_TERM_REGEX, C}];
 query_option({return_terms, B}) when is_boolean(B) ->
     [{?Q_RETURNTERMS, atom_to_list(B)}];
+query_option({pagination_sort, B}) when is_boolean(B) ->
+    [{?Q_PAGINATION_SORT, atom_to_list(B)}];
 query_option(_) ->
     [].
 
