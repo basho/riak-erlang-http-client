@@ -80,7 +80,7 @@ decode_siblings(Boundary, SibBody) ->
               SibBody, Boundary),
     [ {headers_to_metadata([ {binary_to_list(H), binary_to_list(V)}
                              || {H, V} <- Headers ]),
-       element(1, split_binary(Body, size(Body)-2))} %% remove trailing \r\n
+       element(1, split_binary(Body, size(Body)))}
       || {_, {_, Headers}, Body} <- Parts ].
 
 headers_to_metadata(Headers) ->
