@@ -710,7 +710,7 @@ modify_type(Rhc, Fun, BucketAndType, Key, Options) ->
             update_type(Rhc, BucketAndType, Key, Mod:to_op(NewData), Options);
         {error, {notfound, Type}} when Create ->
             %% Not found, but ok to create it
-            Mod = riakc_datatype:module(Type),
+            Mod = riakc_datatype:module_for_type(Type),
             NewData = Fun(Mod:new()),
             update_type(Rhc, BucketAndType, Key, Mod:to_op(NewData), Options);
         {error, Reason} ->

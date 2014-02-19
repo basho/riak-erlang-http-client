@@ -35,7 +35,7 @@ datatype_from_json({struct, Props}) ->
     Value = proplists:get_value(<<"value">>, Props),
     Type = binary_to_existing_atom(proplists:get_value(<<"type">>, Props), utf8),
     Context = proplists:get_value(<<"context">>, Props, undefined),
-    Mod = riakc_datatype:module(Type),
+    Mod = riakc_datatype:module_for_type(Type),
     Mod:new(decode_value(Type, Value), Context).
 
 decode_value(counter, Value) -> Value;
