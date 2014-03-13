@@ -684,7 +684,7 @@ update_type(Rhc, BucketAndType, Key, {Type, Op, Context}, Options) ->
         {ok, "201", Headers, RBody} ->
             %% Riak-assigned key
             Url = proplists:get_value("Location", Headers),
-            Key = list_to_binary(lists:last(string:tokens(Url, "/"))),
+            Key = unicode:characters_to_binary(lists:last(string:tokens(Url, "/")), utf8),
             case proplists:get_value("Content-Length", Headers) of
                 "0" ->
                     {ok, Key};
@@ -770,7 +770,7 @@ index_url(Rhc, BucketAndType, Index, Query, Params) ->
     {Type, Bucket} = extract_bucket_type(BucketAndType),
     QuerySegments = index_query_segments(Query),
     IndexName = index_name(Index),
-    unicode:characters_to_list(
+    lists:flatten(
       [root_url(Rhc),
        [ ["types", "/", Type, "/"] || Type =/= undefined ],
        "buckets", "/", Bucket, "/", "index", "/", IndexName,
@@ -803,7 +803,7 @@ index_name(Idx) -> Idx.
 make_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
     {Type, Bucket} = extract_bucket_type(BucketAndType),
     {IsKeys, IsProps, IsBuckets} = detect_bucket_flags(Query),
-    unicode:characters_to_list(
+    lists:flatten(
         [root_url(Rhc),
          [ [ "types", "/", Type, "/"] || Type =/= undefined ],
          %% Prefix, "/",
@@ -818,18 +818,17 @@ make_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
 %% @doc Generate a counter url.
 -spec make_counter_url(rhc(), term(), term(), list()) -> iolist().
 make_counter_url(Rhc, Bucket, Key, Query) ->
-    binary_to_list(
-      iolist_to_binary(
+    lists:flatten(
         [root_url(Rhc),
          <<"buckets">>, "/", Bucket, "/", <<"counters">>, "/", Key, "?",
-         [ [mochiweb_util:urlencode(Query)] || Query =/= []]])).
+         [ [mochiweb_util:urlencode(Query)] || Query =/= []]]).
 
 make_datatype_url(Rhc, BucketAndType, Key, Query) ->
     case extract_bucket_type(BucketAndType) of
         {undefined, _B} ->
             throw(default_bucket_type_disallowed);
         {Type, Bucket} ->
-            unicode:characters_to_list(
+            lists:flatten(
               [root_url(Rhc),
                "types/", Type,
                "/buckets/", Bucket,
