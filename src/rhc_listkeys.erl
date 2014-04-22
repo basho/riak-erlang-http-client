@@ -46,11 +46,11 @@ wait_for_list(ReqId, Timeout) ->
 %% @private
 wait_for_list(ReqId, _Timeout0, Acc) ->
     receive
-        {ReqId, done} -> 
+        {ReqId, done} ->
             {ok, lists:flatten(Acc)};
-        {ReqId, {error, Reason}} -> 
+        {ReqId, {error, Reason}} ->
             {error, Reason};
-        {ReqId, {_,Res}} -> 
+        {ReqId, {_,Res}} ->
             wait_for_list(ReqId,_Timeout0,[Res|Acc])
     end.
 
@@ -107,20 +107,20 @@ is_empty(#parse_state{}) ->
     false.
 
 try_parse(Data, #parse_state{buffer=B, brace=D, quote=Q, escape=E}) ->
-    Parse = try_parse(binary_to_list(Data), B, D, Q, E),
+    Parse = try_parse(unicode:characters_to_list(Data, utf8), B, D, Q, E),
     {KeyLists, NewParseState} =
         lists:foldl(
           fun(Chunk, Acc) when is_list(Chunk), is_list(Acc) ->
                   {struct, Props} =  mochijson2:decode(Chunk),
-                  Keys = 
+                  Keys =
                       case proplists:get_value(<<"keys">>, Props, []) of
-                          [] -> 
-                              proplists:get_value(<<"buckets">>, 
+                          [] ->
+                              proplists:get_value(<<"buckets">>,
                                                   Props, []);
                           K -> K
                       end,
                   case Keys of
-                      [] -> 
+                      [] ->
                           %%check for a timeout error
                           case proplists:get_value(<<"error">>, Props, []) of
                               [] -> Acc;
