@@ -46,7 +46,15 @@ decode_value(map, {struct, Fields}) ->
     [ begin
           {Name, Type} = field_from_json(Field),
           {{Name,Type}, decode_value(Type, Value)}
-      end || {Field, Value} <- Fields ].
+      end || {Field, Value} <- Fields ];
+decode_value(rangereg, {struct, Fields}) ->
+    [
+     begin
+         Field = atom_to_binary(F,utf8),
+         {F, proplists:get_value(Field, Fields, undefined)}
+     end || F <- [max, min, first, last]
+    ].
+
 
 field_from_json(Bin) when is_binary(Bin) ->
     {match, [Name, BinType]} = re:run(Bin, ?FIELD_PATTERN, [anchored, {capture, all_but_first, binary}]),
@@ -77,6 +85,8 @@ decode_error(_, {ok, _, _, Body}) ->
 
 encode_update_request(register, {assign, Bin}, _Context) ->
     {struct, [{<<"assign">>, Bin}]};
+encode_update_request(rangereg, {assign, Int}, _Context) ->
+    {struct, [{<<"assign">>, Int}]};
 encode_update_request(flag, Atom, _Context) ->
     atom_to_binary(Atom, utf8);
 encode_update_request(counter, Op, _Context) ->
