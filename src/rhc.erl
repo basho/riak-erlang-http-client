@@ -61,11 +61,13 @@
          counter_val/3, counter_val/4,
          fetch_type/3, fetch_type/4,
          update_type/4, update_type/5,
-         modify_type/5
+         modify_type/5,
+         get_preflist/3
          ]).
 
 -include("raw_http.hrl").
 -include("rhc.hrl").
+-include_lib("riakc/include/riakc.hrl").
 
 -export_type([rhc/0]).
 -opaque rhc() :: #rhc{}.
@@ -717,6 +719,19 @@ modify_type(Rhc, Fun, BucketAndType, Key, Options) ->
             {error, Reason}
     end.
 
+%% @doc Get the active preflist based on a particular bucket/key
+%%      combination.
+-spec get_preflist(rhc(), binary(), binary()) -> {ok, [tuple()]}|{error, term()}.
+get_preflist(Rhc, Bucket, Key) ->
+    Url = make_preflist_url(Rhc, Bucket, Key),
+    case request(get, Url, ["200"], [], [], Rhc) of
+        {ok, "200", _Headers, Body} ->
+            {struct, Response} = mochijson2:decode(Body),
+            {ok, erlify_preflist(Response)};
+        {error, Error} ->
+            {error, Error}
+    end.
+
 
 %% INTERNAL
 
@@ -797,7 +812,6 @@ index_name({integer_index, I}) ->
 index_name(Idx) -> Idx.
 
 
-
 %% @doc Assemble the URL for the given bucket and key
 %% @spec make_url(rhc(), bucket(), key(), proplist()) -> iolist()
 make_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
@@ -811,9 +825,21 @@ make_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
          [ ["buckets", "/", Bucket,"/"] || Bucket =/= undefined ],
          [ [ "keys" ] || IsKeys ],
          [ [ "props" ] || IsProps ],
-         [ ["keys", "/", Key,"/"] || Key =/= undefined andalso not IsKeys andalso not IsProps ],
+         [ [ "keys", "/", Key,"/" ] || Key =/= undefined andalso not
+                                          IsKeys andalso not IsProps ],
          [ ["?", mochiweb_util:urlencode(Query)] || Query =/= [] ]
         ]).
+
+%% @doc Generate a preflist url.
+-spec make_preflist_url(rhc(), binary(), binary()) -> iolist().
+make_preflist_url(Rhc, BucketAndType, Key) ->
+    {Type, Bucket} = extract_bucket_type(BucketAndType),
+    lists:flatten(
+      [root_url(Rhc),
+       [ [ "types", "/", Type, "/"] || Type =/= undefined ],
+       [ ["buckets", "/", Bucket,"/"] || Bucket =/= undefined ],
+       [ [ "keys", "/", Key,"/" ] || Key =/= undefined],
+       [ ["preflist/"] ]]).
 
 %% @doc Generate a counter url.
 -spec make_counter_url(rhc(), term(), term(), list()) -> iolist().
@@ -926,6 +952,20 @@ erlify_server_info(Props) ->
 erlify_server_info(<<"nodename">>, Name) -> {node, Name};
 erlify_server_info(<<"riak_kv_version">>, Vsn) -> {server_version, Vsn};
 erlify_server_info(_Ignore, _) -> [].
+
+%% @doc Convert a preflist resource response to a proplist.
+erlify_preflist(Response) ->
+    Preflist = [V || {_, V} <- proplists:get_value(<<"preflist">>, Response)],
+    [ lists:foldl(fun({K, V}, AccRec) -> erlify_preflist(K, V, AccRec) end,
+                 #preflist_item{}, P) || P <- Preflist ].
+
+erlify_preflist(<<"partition">>, Partition, Acc) ->
+    Acc#preflist_item{partition=Partition};
+erlify_preflist(<<"node">>, Node, Acc) ->
+    Acc#preflist_item{node=Node};
+erlify_preflist(<<"primary">>, IfPrimary, Acc) ->
+    Acc#preflist_item{primary=IfPrimary}.
+
 
 get_auth_header(Options) ->
     case lists:keyfind(credentials, 1, Options) of
