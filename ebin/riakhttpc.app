@@ -1,9 +1,10 @@
 {application, riakhttpc,
  [
   {description, "Riak HTTP Client"},
-  {vsn, "1.3.1"},
+  {vsn, "1.4"},
   {modules, [
              rhc,
+             rhc_ts,
              rhc_bucket,
              rhc_dt,
              rhc_listkeys,
@@ -15,6 +16,7 @@
   {applications, [
                   kernel,
                   stdlib,
+                  crypto,
                   ibrowse
                  ]},
   {env, []}

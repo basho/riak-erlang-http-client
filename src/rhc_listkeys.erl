@@ -47,7 +47,7 @@ wait_for_list(ReqId, Timeout) ->
 wait_for_list(ReqId, _Timeout0, Acc) ->
     receive
         {ReqId, done} ->
-            {ok, lists:flatten(Acc)};
+            {ok, lists:append(Acc)};
         {ReqId, {error, Reason}} ->
             {error, Reason};
         {ReqId, {_,Res}} ->
@@ -83,7 +83,7 @@ list_acceptor(Pid,PidRef,IbrowseRef,ParseState,Type) ->
             list_acceptor(Pid,PidRef,IbrowseRef,ParseState,Type);
         {ibrowse_async_response, IbrowseRef, Data} ->
                 try
-                    {Keys, NewParseState} = try_parse(Data, ParseState),
+                    {Keys, NewParseState} = try_parse(Data, ParseState, Type),
                     if Keys =/= [] -> Pid ! {PidRef, {Type, Keys}};
                        true        -> ok
                     end,
@@ -106,7 +106,7 @@ is_empty(#parse_state{buffer=[],brace=0,quote=false,escape=false}) ->
 is_empty(#parse_state{}) ->
     false.
 
-try_parse(Data, #parse_state{buffer=B, brace=D, quote=Q, escape=E}) ->
+try_parse(Data, #parse_state{buffer=B, brace=D, quote=Q, escape=E}, Type) ->
     Parse = try_parse(unicode:characters_to_list(Data, utf8), B, D, Q, E),
     {KeyLists, NewParseState} =
         lists:foldl(
@@ -133,7 +133,16 @@ try_parse(Data, #parse_state{buffer=B, brace=D, quote=Q, escape=E}) ->
           end,
           [],
           Parse),
-    {lists:flatten(KeyLists), NewParseState}.
+    Keys =
+        case Type of
+            keys->
+                lists:flatten(KeyLists);
+            ts_keys ->
+                %% (a) avoid flattening TS keys,
+                %% (b) present records as as tuples, as riakc does
+                [list_to_tuple(X) || X <- lists:append(KeyLists)]
+        end,
+    {Keys, NewParseState}.
 
 try_parse([], B, D, Q, E) ->
     [#parse_state{buffer=B, brace=D, quote=Q, escape=E}];
