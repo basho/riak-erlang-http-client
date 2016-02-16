@@ -364,7 +364,7 @@ make_delete_url(Rhc, Table, Qs) ->
 make_put_url(Rhc, Table, Qs) ->
     make_nonq_url(Rhc, Table, Qs).
 make_nonq_url(Rhc, Table, Qs_) ->
-    Qs = [{K, lists:flatten(io_lib:format("~s", [V]))} || {K,V} <- Qs_],
+    Qs = [{K, iolist_to_binary(V)} || {K,V} <- Qs_],
     lists:flatten(
       [root_url(Rhc),
        "/tables/", binary_to_list(Table),
