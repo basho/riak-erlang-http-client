@@ -284,7 +284,7 @@ request_stream(Pid, Method, Url, Headers, Body, Rhc) ->
     AuthHeader = get_auth_header(Rhc#rhc.options),
     SSLOptions = get_ssl_options(Rhc#rhc.options),
     Accept = {"Accept", "multipart/mixed, */*;q=0.9"},
-    case ibrowse:send_req(Url, Headers ++ AuthHeader, Method, Body,
+    case ibrowse:send_req(Url, [Accept | Headers] ++ AuthHeader, Method, Body,
                           [{stream_to, Pid},
                            {response_format, binary}] ++ SSLOptions) of
         {ibrowse_req_id, ReqId} ->
