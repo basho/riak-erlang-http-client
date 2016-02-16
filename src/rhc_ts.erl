@@ -218,7 +218,9 @@ query(Rhc, Query, Options) ->
         {ok, "200", _Headers, BodyJson} ->
             case catch mochijson2:decode(BodyJson) of
                 {struct, [{<<"columns">>, Columns}, {<<"rows">>, Rows}]} ->
-                    {Columns, Rows};
+                    %% convert records (coming in as lists) to tuples
+                    %% to conform to the representation used in riakc
+                    {Columns, [list_to_tuple(R) || R <- Rows]};
                 _ ->
                     {error, bad_body}
             end;
