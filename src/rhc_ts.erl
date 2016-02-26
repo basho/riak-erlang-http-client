@@ -63,8 +63,6 @@ create() ->
 %%      request parameters and client options in Options, specially including:
 %%       api_version :: string(), to insert after /ts/;
 %%       client_id :: string(), to use in request headers;
-%%       send_key_as :: json | path_elements, to select
-%%                      the method of sending keys in get/delete requests.
 create(IP, Port, Options0)
   when is_list(IP), is_integer(Port), is_list(Options0) ->
     Options =
@@ -78,9 +76,7 @@ create(IP, Port, Options0)
           [{api_version, ?API_VERSION,
             fun(X) when is_list(X) -> X end},
            {client_id, random_client_id(),
-            fun(X) when is_list(X) -> X end},
-           {send_key_as, path_elements,
-            fun(X) when X == json; X == path_elements -> X end}]),
+            fun(X) when is_list(X) -> X end}]),
     #rhc{ip = IP, port = Port,
          prefix = "/ts/"++proplists:get_value(api_version, Options),
          options = Options}.
@@ -166,14 +162,7 @@ delete(Rhc, Table, Key, Options) ->
     case make_delete_url(Rhc, Table, Key, Qs, Options) of
         {ok, Url} ->
             Headers = [{?HEAD_CLIENT, client_id(Rhc, Options)}],
-            Body =
-                case proplists:get_value(send_key_as, Rhc#rhc.options) of
-                    json ->
-                        mochijson2:encode({struct, [{key, Key}]});
-                    path_elements ->
-                        []
-                end,
-            case request(delete, Url, ["200"], Headers, Body, Rhc) of
+            case request(delete, Url, ["200"], Headers, [], Rhc) of
                 {ok, "200", _Headers, <<"ok">>} ->
                     ok;
                 {error, {ok, "404", _, _}} ->
@@ -385,41 +374,28 @@ make_delete_url(Rhc, Table, Key, Qs, Options) ->
     make_keys_url(Rhc, Table, Key, Qs, Options).
 make_keys_url(Rhc = #rhc{options = RhcOptions},
               Table, Key, Qs, Options) ->
-    case proplists:get_value(send_key_as, RhcOptions) of
-        json ->
-            %% hoist keys into URL, as ?json="{key: [k:v, k2:v2]}" params, as
-            %% curl does with -G, but keep it in json
-            Encoded = mochijson2:encode({struct, [{key, Key}]}),
-            Qs1 = [{json, iolist_to_binary(Encoded)}]
-                ++ [{K, iolist_to_binary(V)} || {K,V} <- Qs],
+    %% serialize key elements as /f1/v1/f2/v2:
+    %% 1. fetch field names, supplied separately in this call's Options
+    case proplists:get_value(key_column_names, Options) of
+        ColNames when is_list(ColNames),
+                      length(ColNames) == length(Key) ->
+            EnrichedKey = lists:zip(ColNames, Key),
             {ok, lists:flatten(
                    [root_url(Rhc),
-                    "/tables/", binary_to_list(Table), "/keys/",
-                    [[$?, mochiweb_util:urlencode(Qs1)] || Qs1 /= []]])};
-        path_elements ->
-            %% serialize key elements as /f1/v1/f2/v2:
-            %% 1. fetch field names, supplied separately in this call's Options
-            case proplists:get_value(key_column_names, Options) of
-                ColNames when is_list(ColNames),
-                              length(ColNames) == length(Key) ->
-                    EnrichedKey = lists:zip(ColNames, Key),
-                    {ok, lists:flatten(
-                           [root_url(Rhc),
-                            "/tables/", binary_to_list(Table),
-                            keys_to_path_elements_append(EnrichedKey, "/keys"),
-                            [[$?, mochiweb_util:urlencode(Qs)] || Qs /= []]])};
-                undefined ->
-                    %% caller didn't specify column names: try v1/v2/v3
-                    {ok, lists:flatten(
-                           [root_url(Rhc),
-                            "/tables/", binary_to_list(Table),
-                            keys_to_path_elements_append(Key, "/keys"),
-                            [[$?, mochiweb_util:urlencode(Qs)] || Qs /= []]])};
-                _ColNames when is_list(_ColNames) ->
-                    {error, key_col_count_mismatch};
-                _Invalid ->
-                    {error, invalid_col_names}
-            end
+                    "/tables/", binary_to_list(Table),
+                    keys_to_path_elements_append(EnrichedKey, "/keys"),
+                    [[$?, mochiweb_util:urlencode(Qs)] || Qs /= []]])};
+        undefined ->
+            %% caller didn't specify column names: try v1/v2/v3
+            {ok, lists:flatten(
+                   [root_url(Rhc),
+                    "/tables/", binary_to_list(Table),
+                    keys_to_path_elements_append(Key, "/keys"),
+                    [[$?, mochiweb_util:urlencode(Qs)] || Qs /= []]])};
+        _ColNames when is_list(_ColNames) ->
+            {error, key_col_count_mismatch};
+        _Invalid ->
+            {error, invalid_col_names}
     end.
 
 keys_to_path_elements_append([], Acc) ->
