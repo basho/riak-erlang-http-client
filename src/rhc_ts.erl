@@ -43,9 +43,6 @@
 -include("rhc.hrl").
 -include_lib("riakc/include/riakc.hrl").
 
--export_type([rhc/0]).
--opaque rhc() :: #rhc{}.
-
 -type ts_table()  :: binary().
 -type ts_key()    :: [integer() | float() | binary()].
 -type ts_record() :: [integer() | float() | binary()].
@@ -60,75 +57,91 @@ create() ->
     create("127.0.0.1", 8098, []).
 
 %% @doc Create a client for connecting to a Riak node.
--spec create(string(), integer(), Options::list()) -> rhc().
-create(IP, Port, Opts0) when is_list(IP), is_integer(Port),
-                             is_list(Opts0) ->
-    Opts = case proplists:lookup(client_id, Opts0) of
-               none -> [{client_id, random_client_id()}|Opts0];
-               Bin when is_binary(Bin) ->
-                   [{client_id, binary_to_list(Bin)}
-                    | [ O || O={K,_} <- Opts0, K =/= client_id ]];
-               _ ->
-                   Opts0
-           end,
-    ApiVersion = proplists:get_value(api_version, Opts, ?API_VERSION),
-    Opts1 = lists:keystore(api_version, 1, Opts, {api_version, ApiVersion}),
-    #rhc{ip = IP, port = Port, prefix = "/ts/"++ApiVersion, options = Opts1}.
+-spec create(string(), inet:port_number(), Options::list()) ->
+                    #rhc{}.
+%% @doc Create a client for connecting to IP:Port, with predefined
+%%      request parameters and client options in Options, specially including:
+%%       api_version :: string(), to insert after /ts/;
+%%       client_id :: string(), to use in request headers;
+%%       send_key_as :: json | path_elements, to select
+%%                      the method of sending keys in get/delete requests.
+create(IP, Port, Options0)
+  when is_list(IP), is_integer(Port), is_list(Options0) ->
+    Options =
+        lists:foldl(
+          fun({Key, Default, ValidF}, AccOpts) ->
+                  lists:keystore(
+                    Key, 1, AccOpts,
+                    {Key, ValidF(proplists:get_value(Key, AccOpts, Default))})
+          end,
+          Options0,
+          [{api_version, ?API_VERSION,
+            fun(X) when is_list(X) -> X end},
+           {client_id, random_client_id(),
+            fun(X) when is_list(X) -> X end},
+           {send_key_as, path_elements,
+            fun(X) when X == json; X == path_elements -> X end}]),
+    #rhc{ip = IP, port = Port,
+         prefix = "/ts/"++proplists:get_value(api_version, Options),
+         options = Options}.
 
 %% @doc Get the IP this client will connect to.
-%% @spec ip(rhc()) -> string()
+%% @spec ip(#rhc{}) -> string()
 ip(#rhc{ip=IP}) -> IP.
 
 %% @doc Get the Port this client will connect to.
-%% @spec port(rhc()) -> integer()
+%% @spec port(#rhc{}) -> integer()
 port(#rhc{port=Port}) -> Port.
 
 %% @doc Get the client ID that this client will use when storing objects.
-%% @spec get_client_id(rhc()) -> {ok, string()}
+%% @spec get_client_id(#rhc{}) -> {ok, string()}
 get_client_id(Rhc) ->
     {ok, client_id(Rhc, [])}.
 
 
--spec get(rhc(), ts_table(), ts_key()) ->
+-spec get(#rhc{}, ts_table(), ts_key()) ->
                  {ok, ts_selection()} | {error, term()}.
 %% @equiv get(Rhc, Table, Key, [])
 get(Rhc, Table, Key) ->
     get(Rhc, Table, Key, []).
 
--spec get(rhc(), Table::ts_table(), Key::ts_key(), Options::proplists:proplist()) ->
+-spec get(#rhc{}, Table::ts_table(), Key::ts_key(), Options::proplists:proplist()) ->
                  {ok, ts_selection()} | {error, term()}.
 %% @doc Get the TS record stored in Table at Key.
 %%      Takes a value for timeout in Options.
 get(Rhc, Table, Key, Options) ->
-    Encoded = mochijson2:encode({struct, [{key, Key}]}),
-    Qs = [{json, Encoded} | get_q_params(Rhc, Options)],
-    Url = make_get_url(Rhc, Table, Qs),
-    Headers = [{?HEAD_CLIENT, client_id(Rhc, Options)}],
-    case request(get, Url, ["200"], Headers, [], Rhc) of
-        {ok, _Status, _Headers, Body} ->
-            case catch mochijson2:decode(Body) of
-                {struct, [{<<"columns">>, Columns}, {<<"rows">>, Rows}]} ->
-                    {ok, {Columns, Rows}};
-                _ ->
-                    {error, bad_body}
+    Qs = get_q_params(Rhc, Options),
+    case make_get_url(Rhc, Table, Key, Qs, Options) of
+        {ok, Url} ->
+            Headers = [{?HEAD_CLIENT, client_id(Rhc, Options)}],
+            case request(get, Url, ["200"], Headers, [], Rhc) of
+                {ok, _Status, _Headers, Body} ->
+                    case catch mochijson2:decode(Body) of
+                        {struct, [{<<"columns">>, Columns}, {<<"rows">>, Rows}]} ->
+                            {ok, {Columns, Rows}};
+                        _ ->
+                            {error, bad_body}
+                    end;
+                {error, {ok, "404", _, _}} ->
+                    {error, notfound};
+                {error, Error} ->
+                    {error, Error}
             end;
-        {error, {ok, "404", _, _}} ->
-            {error, notfound};
-        {error, Error} ->
-            {error, Error}
+        {error, Reason} ->
+            {error, Reason}
     end.
 
--spec put(rhc(), ts_table(), [ts_record()]) -> ok | {error, term()}.
+-spec put(#rhc{}, ts_table(), [ts_record()]) -> ok | {error, term()}.
 put(Rhc, Table, Records) ->
     put(Rhc, Table, Records, []).
 
--spec put(rhc(), ts_table(), Batch::[ts_record()], proplists:proplist()) ->
+-spec put(#rhc{}, ts_table(), Batch::[ts_record()], proplists:proplist()) ->
                  ok | {error, term()}.
 %% @doc Batch put of TS records.
 put(Rhc, Table, Batch, Options) ->
     Encoded = mochijson2:encode({struct, [{data, Batch}]}),
     Qs = put_q_params(Rhc, Options),
-    Url = make_put_url(Rhc, Table, Qs),
+    {ok, Url} = make_put_url(Rhc, Table, Qs),
     Headers = [{?HEAD_CLIENT, client_id(Rhc, Options)}],
     case request(put, Url, ["415"], Headers, Encoded, Rhc) of
         {ok, _Status, _, <<"ok">>} ->
@@ -140,28 +153,38 @@ put(Rhc, Table, Batch, Options) ->
     end.
 
 
--spec delete(rhc(), ts_table(), ts_key()) -> ok | {error, term()}.
+-spec delete(#rhc{}, ts_table(), ts_key()) -> ok | {error, term()}.
 %% @equiv delete(Rhc, Table, Key, [])
 delete(Rhc, Table, Key) ->
     delete(Rhc, Table, Key, []).
 
--spec delete(rhc(), ts_table(), ts_key(), proplists:proplist()) ->
+-spec delete(#rhc{}, ts_table(), ts_key(), proplists:proplist()) ->
                     ok | {error, term()}.
 %% @doc Delete the given key from the given bucket.
 delete(Rhc, Table, Key, Options) ->
-    Encoded = mochijson2:encode({struct, [{key, Key}]}),
     Qs = delete_q_params(Rhc, Options),
-    Url = make_delete_url(Rhc, Table, Qs),
-    Headers = [{?HEAD_CLIENT, client_id(Rhc, Options)}],
-    case request(delete, Url, ["200"], Headers, Encoded, Rhc) of
-        {ok, "200", _Headers, <<"ok">>} ->
-            ok;
-        {error, {ok, "404", _, _}} ->
-            {error, notfound};
-        {error, {ok, "400", _, _}} ->
-            {error, bad_key};
-        {error, Error} ->
-            {error, Error}
+    case make_delete_url(Rhc, Table, Key, Qs, Options) of
+        {ok, Url} ->
+            Headers = [{?HEAD_CLIENT, client_id(Rhc, Options)}],
+            Body =
+                case proplists:get_value(send_key_as, Rhc#rhc.options) of
+                    json ->
+                        mochijson2:encode({struct, [{key, Key}]});
+                    path_elements ->
+                        []
+                end,
+            case request(delete, Url, ["200"], Headers, Body, Rhc) of
+                {ok, "200", _Headers, <<"ok">>} ->
+                    ok;
+                {error, {ok, "404", _, _}} ->
+                    {error, notfound};
+                {error, {ok, "400", _, _}} ->
+                    {error, bad_key};
+                {error, Error} ->
+                    {error, Error}
+            end;
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 
@@ -174,11 +197,11 @@ list_keys(Rhc, Table) ->
             Result
     end.
 
--spec stream_list_keys(rhc(), ts_table()) ->
+-spec stream_list_keys(#rhc{}, ts_table()) ->
           {ok, reference()} | {error, term()}.
 %% @doc Stream key lists to a Pid.
 stream_list_keys(Rhc, Table) ->
-    Url = lists:flatten([root_url(Rhc),"/tables/",binary_to_list(Table),"/keys"]),
+    Url = lists:flatten([root_url(Rhc),"/tables/",binary_to_list(Table),"/list_keys"]),
     StartRef = make_ref(),
     Pid = spawn(rhc_listkeys, list_acceptor, [self(), StartRef, ts_keys]),
     case request_stream(Pid, get, Url, [], [], Rhc) of
@@ -190,11 +213,11 @@ stream_list_keys(Rhc, Table) ->
     end.
 
 
--spec query(rhc(), string()) -> {ok, ts_selection()} | {error, term()}.
+-spec query(#rhc{}, string()) -> {ok, ts_selection()} | {error, term()}.
 query(Rhc, Query) ->
     query(Rhc, Query, []).
 
--spec query(rhc(), string(), proplists:proplist()) ->
+-spec query(#rhc{}, string(), proplists:proplist()) ->
                    ts_selection() | {error, term()}.
 query(Rhc, Query, Options) ->
     %% queries should be dispatched with different methods depending
@@ -212,7 +235,7 @@ query(Rhc, Query, Options) ->
             "describe" ->
                 {get,  [{json, iolist_to_binary(Encoded)}], []}
         end,
-    Url = lists:flatten([root_url(Rhc),"/query?",mochiweb_util:urlencode(Qs)]),
+    Url = lists:flatten([root_url(Rhc), "/query?", mochiweb_util:urlencode(Qs)]),
     Headers = [{?HEAD_CLIENT, client_id(Rhc, Options)}],
     case request(Method, Url, ["200", "204"], Headers, Body, Rhc) of
         {ok, "200", _Headers, BodyJson} ->
@@ -235,14 +258,11 @@ query(Rhc, Query, Options) ->
 
 %% @doc Get the client ID to use, given the passed options and client.
 %%      Choose the client ID in Options before the one in the client.
-%% @spec client_id(rhc(), proplist()) -> client_id()
-client_id(#rhc{options=RhcOptions}, Options) ->
-    case proplists:get_value(client_id, Options) of
-        undefined ->
-            proplists:get_value(client_id, RhcOptions);
-        ClientId ->
-            ClientId
-    end.
+%% @spec client_id(#rhc{}, proplist()) -> client_id()
+client_id(#rhc{options = RhcOptions}, Options) ->
+    proplists:get_value(
+      client_id, Options,
+      proplists:get_value(client_id, RhcOptions)).
 
 %% @doc Generate a random client ID.
 %% @spec random_client_id() -> client_id()
@@ -251,7 +271,7 @@ random_client_id() ->
     integer_to_list(erlang:phash2(Id)).
 
 %% @doc Assemble the root URL for the given client
-%% @spec root_url(rhc()) -> iolist()
+%% @spec root_url(#rhc{}) -> iolist()
 root_url(#rhc{ip = Ip, port = Port,
               prefix = Prefix, options = Opts}) ->
     Proto = case proplists:get_value(is_ssl, Opts) of
@@ -294,31 +314,33 @@ request_stream(Pid, Method, Url, Headers, Body, Rhc) ->
     end.
 
 %% @doc Get the default options for the given client
-%% @spec options(rhc()) -> proplist()
+%% @spec options(#rhc{}) -> proplist()
 options(#rhc{options=Options}) ->
     Options.
 
 %% @doc Extract the list of query parameters to use for a GET
-%% @spec get_q_params(rhc(), proplist()) -> proplist()
+%% @spec get_q_params(#rhc{}, proplist()) -> proplist()
 get_q_params(Rhc, Options) ->
-    options_list([timeout], Options ++ options(Rhc)).
+    options_list([timeout],
+                 Options ++ options(Rhc)).
 
 %% @doc Extract the list of query parameters to use for a PUT
-%% @spec put_q_params(rhc(), proplist()) -> proplist()
+%% @spec put_q_params(#rhc{}, proplist()) -> proplist()
 put_q_params(Rhc, Options) ->
     options_list([],
                  Options ++ options(Rhc)).
 
 %% @doc Extract the list of query parameters to use for a DELETE
-%% @spec delete_q_params(rhc(), proplist()) -> proplist()
+%% @spec delete_q_params(#rhc{}, proplist()) -> proplist()
 delete_q_params(Rhc, Options) ->
-    options_list([timeout], Options ++ options(Rhc)).
+    options_list([timeout],
+                 Options ++ options(Rhc)).
 
 
+-spec options_list([Key::atom()|{Key::atom(),Alias::string()}],
+                   proplists:proplist()) -> proplists:proplist().
 %% @doc Extract the options for the given `Keys' from the possible
 %%      list of `Options'.
-%% @spec options_list([Key::atom()|{Key::atom(),Alias::string()}],
-%%                    proplist()) -> proplist()
 options_list(Keys, Options) ->
     options_list(Keys, Options, []).
 
@@ -357,15 +379,81 @@ get_ssl_options(Options) ->
             []
     end.
 
-make_get_url(Rhc, Table, Qs) ->
-    make_nonq_url(Rhc, Table, Qs).
-make_delete_url(Rhc, Table, Qs) ->
-    make_nonq_url(Rhc, Table, Qs).
-make_put_url(Rhc, Table, Qs) ->
-    make_nonq_url(Rhc, Table, Qs).
-make_nonq_url(Rhc, Table, Qs_) ->
+make_get_url(Rhc, Table, Key, Qs, Options) ->
+    make_keys_url(Rhc, Table, Key, Qs, Options).
+make_delete_url(Rhc, Table, Key, Qs, Options) ->
+    make_keys_url(Rhc, Table, Key, Qs, Options).
+make_keys_url(Rhc = #rhc{options = RhcOptions},
+              Table, Key, Qs, Options) ->
+    case proplists:get_value(send_key_as, RhcOptions) of
+        json ->
+            %% hoist keys into URL, as ?json="{key: [k:v, k2:v2]}" params, as
+            %% curl does with -G, but keep it in json
+            Encoded = mochijson2:encode({struct, [{key, Key}]}),
+            Qs1 = [{json, iolist_to_binary(Encoded)}]
+                ++ [{K, iolist_to_binary(V)} || {K,V} <- Qs],
+            {ok, lists:flatten(
+                   [root_url(Rhc),
+                    "/tables/", binary_to_list(Table), "/keys/",
+                    [[$?, mochiweb_util:urlencode(Qs1)] || Qs1 /= []]])};
+        path_elements ->
+            %% serialize key elements as /f1/v1/f2/v2:
+            %% 1. fetch field names, supplied separately in this call's Options
+            case proplists:get_value(key_column_names, Options) of
+                ColNames when is_list(ColNames),
+                              length(ColNames) == length(Key) ->
+                    EnrichedKey = lists:zip(ColNames, Key),
+                    {ok, lists:flatten(
+                           [root_url(Rhc),
+                            "/tables/", binary_to_list(Table),
+                            keys_to_path_elements_append(EnrichedKey, "/keys"),
+                            [[$?, mochiweb_util:urlencode(Qs)] || Qs /= []]])};
+                undefined ->
+                    %% caller didn't specify column names: try v1/v2/v3
+                    {ok, lists:flatten(
+                           [root_url(Rhc),
+                            "/tables/", binary_to_list(Table),
+                            keys_to_path_elements_append(Key, "/keys"),
+                            [[$?, mochiweb_util:urlencode(Qs)] || Qs /= []]])};
+                _ColNames when is_list(_ColNames) ->
+                    {error, key_col_count_mismatch};
+                _Invalid ->
+                    {error, invalid_col_names}
+            end
+    end.
+
+keys_to_path_elements_append([], Acc) ->
+    lists:flatten(Acc);
+keys_to_path_elements_append([{F, V} | T], Acc) ->
+    keys_to_path_elements_append(
+      T, lists:append(
+           Acc, [$/, maybe_composite_field_to_list(F),
+                 $/, mochiweb_util:quote_plus(value_to_list(V))]));
+keys_to_path_elements_append([V | T], Acc) ->
+    keys_to_path_elements_append(
+      T, lists:append(
+           Acc, [  %% bare values
+                 $/, mochiweb_util:quote_plus(value_to_list(V))])).
+
+maybe_composite_field_to_list(X) when is_binary(X) ->
+    %% the user gave us a simplified representation of [<<"a">>]
+    binary_to_list(X);
+maybe_composite_field_to_list(C = [E|_]) when is_binary(E) ->
+    %% full representation
+    string:join(
+      [binary_to_list(X) || X <- C], ".").
+
+
+value_to_list(X) when is_binary(X) ->
+    binary_to_list(X);
+value_to_list(X) when is_integer(X) ->
+    integer_to_list(X);
+value_to_list(X) when is_float(X) ->
+    float_to_list(X).
+
+make_put_url(Rhc, Table, Qs_) ->
     Qs = [{K, iolist_to_binary(V)} || {K,V} <- Qs_],
-    lists:flatten(
-      [root_url(Rhc),
-       "/tables/", binary_to_list(Table),
-       [[$?, mochiweb_util:urlencode(Qs)] || Qs /= []]]).
+    {ok, lists:flatten(
+           [root_url(Rhc),
+            "/tables/", binary_to_list(Table), "/keys/",
+            [[$?, mochiweb_util:urlencode(Qs)] || Qs /= []]])}.
