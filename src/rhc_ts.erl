@@ -139,7 +139,7 @@ put(Rhc, Table, Batch, Options) ->
     Qs = put_q_params(Rhc, Options),
     {ok, Url} = make_put_url(Rhc, Table, Qs),
     Headers = [{?HEAD_CLIENT, client_id(Rhc, Options)}],
-    case request(put, Url, ["415"], Headers, Encoded, Rhc) of
+    case request(post, Url, ["200"], Headers, Encoded, Rhc) of
         {ok, _Status, _, <<"ok">>} ->
             ok;
         {error, {ok, "404", _, _}} ->
