@@ -135,7 +135,7 @@ put(Rhc, Table, Records) ->
                  ok | {error, term()}.
 %% @doc Batch put of TS records.
 put(Rhc, Table, Batch, Options) ->
-    Encoded = mochijson2:encode({struct, [{data, Batch}]}),
+    Encoded = mochijson2:encode(Batch),
     Qs = put_q_params(Rhc, Options),
     {ok, Url} = make_put_url(Rhc, Table, Qs),
     Headers = [{?HEAD_CLIENT, client_id(Rhc, Options)}],
