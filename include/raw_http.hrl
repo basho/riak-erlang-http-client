@@ -93,6 +93,9 @@
 -define(JSON_RESULTS,      <<"results">>).
 -define(JSON_CONTINUATION, <<"continuation">>).
 
+%% dt related-fields
+-define(JSON_HLL_PRECISION, <<"hll_precision">>).
+
 %%======================================================================
 %% Names of HTTP query parameters
 %%======================================================================
