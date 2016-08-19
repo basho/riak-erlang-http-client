@@ -29,7 +29,7 @@
          decode_error/2
         ]).
 
--define(FIELD_PATTERN, "^(.*)_(counter|set|register|flag|map)$").
+-define(FIELD_PATTERN, "^(.*)_(counter|set|hll|register|flag|map)$").
 
 datatype_from_json({struct, Props}) ->
     Value = proplists:get_value(<<"value">>, Props),
@@ -40,6 +40,7 @@ datatype_from_json({struct, Props}) ->
 
 decode_value(counter, Value) -> Value;
 decode_value(set, Value) -> Value;
+decode_value(hll, Value) -> Value;
 decode_value(flag, Value) -> Value;
 decode_value(register, Value) -> Value;
 decode_value(map, {struct, Fields}) ->
@@ -85,8 +86,12 @@ encode_update_request(set, {update, Ops}, Context) ->
     {struct, Ops ++ include_context(Context)};
 encode_update_request(set, Op, Context) ->
     {struct, [Op|include_context(Context)]};
+encode_update_request(hll, {update, Ops}, Context) ->
+    {struct, Ops ++ include_context(Context)};
+encode_update_request(hll, Op, Context) ->
+    {struct, [Op|include_context(Context)]};
 encode_update_request(map, {update, Ops}, Context) ->
-    {struct, orddict:to_list(lists:foldl(fun encode_map_op/2, orddict:new(), Ops)) ++ 
+    {struct, orddict:to_list(lists:foldl(fun encode_map_op/2, orddict:new(), Ops)) ++
              include_context(Context)}.
 
 encode_map_op({add, Entry}, Ops) ->
