@@ -53,6 +53,7 @@ erlify_prop(?JSON_SEARCH, B) -> {search, B};
 erlify_prop(?JSON_SMALL_VC, I) -> {small_vclock, I};
 erlify_prop(?JSON_W, W) -> {w, erlify_quorum(W)};
 erlify_prop(?JSON_YOUNG_VC, I) -> {young_vclock, I};
+erlify_prop(?JSON_HLL_PRECISION, P) -> {hll_precision, P};
 erlify_prop(_Ignore, _) -> [].
 
 erlify_quorum(?JSON_ALL) -> all;
@@ -105,6 +106,7 @@ httpify_prop(search, B) -> {?JSON_SEARCH, B};
 httpify_prop(small_vclock, VC) -> {?JSON_SMALL_VC, VC};
 httpify_prop(w, Q) -> {?JSON_W, Q};
 httpify_prop(young_vclock, VC) -> {?JSON_YOUNG_VC, VC};
+httpify_prop(hll_precision, P) -> {?JSON_HLL_PRECISION, P};
 httpify_prop(_Ignore, _) -> [].
 
 httpify_modfun({modfun, M, F}) ->
