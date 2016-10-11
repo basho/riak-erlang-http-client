@@ -69,6 +69,10 @@
 -include("rhc.hrl").
 -include_lib("riakc/include/riakc.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -export_type([rhc/0]).
 -opaque rhc() :: #rhc{}.
 
@@ -302,7 +306,7 @@ counter_val(Rhc, Bucket, Key) ->
 %%        <dt>`basic_quorum'</dt>
 %%          <dd>When set to `true' riak will return a value as soon as it gets a quorum of responses.</dd>
 %%      </dl>
-%% See the riak docs at http://docs.basho.com/riak/latest/references/apis/http/ fro details
+%% See the riak docs at http://docs.basho.com/riak/latest/references/apis/http/ for details
 -spec counter_val(rhc(), term(), term(), list()) -> {ok, integer()} | {error, term()}.
 counter_val(Rhc, Bucket, Key, Options) ->
     Qs = counter_q_params(Rhc, Options),
@@ -787,8 +791,8 @@ index_url(Rhc, BucketAndType, Index, Query, Params) ->
     IndexName = index_name(Index),
     lists:flatten(
       [root_url(Rhc),
-       [ ["types", "/", Type, "/"] || Type =/= undefined ],
-       "buckets", "/", Bucket, "/", "index", "/", IndexName,
+       [ ["types", "/", mochiweb_util:quote_plus(Type), "/"] || Type =/= undefined ],
+       "buckets", "/", mochiweb_util:quote_plus(Bucket), "/", "index", "/", IndexName,
        [ [ "/", QS] || QS <- QuerySegments ],
        [ ["?", mochiweb_util:urlencode(Params)] || Params =/= []]]).
 
@@ -819,14 +823,14 @@ make_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
     {IsKeys, IsProps, IsBuckets} = detect_bucket_flags(Query),
     lists:flatten(
         [root_url(Rhc),
-         [ [ "types", "/", Type, "/"] || Type =/= undefined ],
+         [ [ "types", "/", mochiweb_util:quote_plus(Type), "/"] || Type =/= undefined ],
          %% Prefix, "/",
          [ [ "buckets" ] || IsBuckets ],
-         [ ["buckets", "/", Bucket,"/"] || Bucket =/= undefined ],
+         [ ["buckets", "/", mochiweb_util:quote_plus(Bucket),"/"] || Bucket =/= undefined ],
          [ [ "keys" ] || IsKeys ],
          [ [ "props" ] || IsProps ],
-         [ [ "keys", "/", Key,"/" ] || Key =/= undefined andalso not
-                                          IsKeys andalso not IsProps ],
+         [ ["keys", "/", mochiweb_util:quote_plus(Key), "/"] ||
+           Key =/= undefined andalso not IsKeys andalso not IsProps ],
          [ ["?", mochiweb_util:urlencode(Query)] || Query =/= [] ]
         ]).
 
@@ -845,9 +849,10 @@ make_preflist_url(Rhc, BucketAndType, Key) ->
 -spec make_counter_url(rhc(), term(), term(), list()) -> iolist().
 make_counter_url(Rhc, Bucket, Key, Query) ->
     lists:flatten(
-        [root_url(Rhc),
-         <<"buckets">>, "/", Bucket, "/", <<"counters">>, "/", Key, "?",
-         [ [mochiweb_util:urlencode(Query)] || Query =/= []]]).
+      [root_url(Rhc),
+       <<"buckets">>, "/", mochiweb_util:quote_plus(Bucket), "/", 
+       <<"counters">>, "/", mochiweb_util:quote_plus(Key), "?",
+       [ [mochiweb_util:urlencode(Query)] || Query =/= []]]).
 
 make_datatype_url(Rhc, BucketAndType, Key, Query) ->
     case extract_bucket_type(BucketAndType) of
@@ -856,9 +861,9 @@ make_datatype_url(Rhc, BucketAndType, Key, Query) ->
         {Type, Bucket} ->
             lists:flatten(
               [root_url(Rhc),
-               "types/", Type,
-               "/buckets/", Bucket,
-               "/datatypes/", [ Key || Key /= undefined ],
+               "types/", mochiweb_util:quote_plus(Type),
+               "/buckets/", mochiweb_util:quote_plus(Bucket),
+               "/datatypes/", [ mochiweb_util:quote_plus(Key) || Key /= undefined ],
                [ ["?", mochiweb_util:urlencode(Query)] || Query /= [] ]])
     end.
 
@@ -1001,3 +1006,36 @@ detect_bucket_flags(Query) ->
     {proplists:get_value(?Q_KEYS, Query, ?Q_FALSE) =/= ?Q_FALSE,
      proplists:get_value(?Q_PROPS, Query, ?Q_FALSE) =/= ?Q_FALSE,
      proplists:get_value(?Q_BUCKETS, Query, ?Q_FALSE) =/= ?Q_FALSE}.
+
+-ifdef(TEST).
+%% @doc validate that bucket, keys and link specifications do not contain
+%%      unescaped slashes
+%%
+%% See section on URL Escaping information at
+%% http://docs.basho.com/riak/latest/dev/references/http/
+
+url_escaping_test() ->
+	Rhc = create(),
+	Type = "my/type",
+	Bucket = "my/bucket",
+	Key = "my/key",
+	Query = [],
+
+	Url = iolist_to_binary(make_url(Rhc, {Type, Bucket}, Key, [])),
+	ExpectedUrl =
+            <<"http://127.0.0.1:8098/types/my%2Ftype/buckets/my%2Fbucket/keys/my%2Fkey/">>,
+	?assertEqual(ExpectedUrl, Url),
+
+	CounterUrl = iolist_to_binary(make_counter_url(Rhc, Bucket, Key, Query)),
+	ExpectedCounterUrl = <<"http://127.0.0.1:8098/buckets/my%2Fbucket/counters/my%2Fkey?">>,
+	?assertEqual(ExpectedCounterUrl, CounterUrl),
+
+	IndexUrl = iolist_to_binary(
+                     index_url(Rhc, {Type, Bucket}, {binary_index, "mybinaryindex"}, Query, [])),
+	ExpectedIndexUrl =
+            <<"http://127.0.0.1:8098/types/my%2Ftype/buckets/my%2Fbucket/index/mybinaryindex_bin">>,
+	?assertEqual(ExpectedIndexUrl, IndexUrl),
+
+	ok.
+
+-endif.
