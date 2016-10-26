@@ -10,7 +10,7 @@ clean:
 	@./rebar clean
 
 test: all
-		@./rebar skip_deps=true eunit
+	@./rebar skip_deps=true eunit
 
 distclean: clean
 	@./rebar delete-deps
