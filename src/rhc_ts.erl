@@ -120,7 +120,7 @@ get(Rhc, Table, Key, Options) ->
                         _ ->
                             {error, bad_body}
                     end;
-                {ok, "404", _, _} ->
+                {error, "404", _, _} ->
                     {error, notfound};
                 {_, Code, _, Body} when is_list(Code) ->
                     {error, {list_to_integer(Code), Body}};
