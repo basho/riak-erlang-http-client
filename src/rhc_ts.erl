@@ -36,7 +36,7 @@
          delete/3, delete/4,
          list_keys/2,
          stream_list_keys/2,
-         query/2
+         'query'/2
          ]).
 
 -include("raw_http.hrl").
@@ -221,14 +221,14 @@ stream_list_keys(Rhc, Table) ->
     end.
 
 
--spec query(#rhc{}, string()) ->
+-spec 'query'(#rhc{}, string()) ->
                    {ok, ts_selection()} | {error, bad_body | {integer(), binary()} | term()}.
-query(Rhc, Query) ->
-    query(Rhc, Query, []).
+'query'(Rhc, Query) ->
+    'query'(Rhc, Query, []).
 
--spec query(#rhc{}, string(), proplists:proplist()) ->
+-spec 'query'(#rhc{}, string(), proplists:proplist()) ->
                    ts_selection() | {error, bad_body | {integer(), binary()} | term()}.
-query(Rhc, Query, Options) ->
+'query'(Rhc, Query, Options) ->
     Url = lists:flatten([root_url(Rhc), "/query"]),
     Headers = [{?HEAD_CLIENT, client_id(Rhc, Options)}],
     case request(post, Url, ["200", "204", "401", "409", "400"], Headers, Query, Rhc) of
