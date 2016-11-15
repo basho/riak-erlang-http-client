@@ -40,6 +40,7 @@ datatype_from_json({struct, Props}) ->
 
 decode_value(counter, Value) -> Value;
 decode_value(set, Value) -> Value;
+decode_value(gset, Value) -> Value;
 decode_value(hll, Value) -> Value;
 decode_value(flag, Value) -> Value;
 decode_value(register, Value) -> Value;
@@ -92,7 +93,12 @@ encode_update_request(hll, Op, Context) ->
     {struct, [Op|include_context(Context)]};
 encode_update_request(map, {update, Ops}, Context) ->
     {struct, orddict:to_list(lists:foldl(fun encode_map_op/2, orddict:new(), Ops)) ++
-             include_context(Context)}.
+         include_context(Context)};
+encode_update_request(gset, {update, Ops}, Context) ->
+    {struct, Ops ++ include_context(Context)};
+encode_update_request(gset, Op, Context) ->
+    {struct, [Op|include_context(Context)]}.
+
 
 encode_map_op({add, Entry}, Ops) ->
     orddict:append(add, field_to_json(Entry), Ops);
