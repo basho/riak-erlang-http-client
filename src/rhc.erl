@@ -909,14 +909,14 @@ get_q_params(Rhc, Options) ->
 %% @doc Extract the list of query parameters to use for a PUT
 %% @spec put_q_params(rhc(), proplist()) -> proplist()
 put_q_params(Rhc, Options) ->
-    options_list([r,w,dw,pr,pw,timeout,asis,{return_body,"returnbody"}],
+    options_list([r,w,dw,pr,pw,timeout,asis,node_confirms,{return_body,"returnbody"}],
                  Options ++ options(Rhc)).
 
 %% @doc Extract the list of query parameters to use for a
 %% counter increment
 -spec counter_q_params(rhc(), list()) -> list().
 counter_q_params(Rhc, Options) ->
-    options_list([r, pr, w, pw, dw, returnvalue, basic_quorum, notfound_ok], Options ++ options(Rhc)).
+    options_list([r, pr, w, pw, dw, returnvalue, basic_quorum, node_confirms, notfound_ok], Options ++ options(Rhc)).
 
 %% @doc Extract the list of query parameters to use for a DELETE
 %% @spec delete_q_params(rhc(), proplist()) -> proplist()
@@ -927,7 +927,8 @@ fetch_type_q_params(Rhc, Options) ->
     options_list([r,pr,basic_quorum,notfound_ok,timeout,include_context], Options ++ options(Rhc)).
 
 update_type_q_params(Rhc, Options) ->
-    options_list([r,w,dw,pr,pw,basic_quorum,notfound_ok,timeout,include_context,{return_body, "returnbody"}],
+    options_list([r,w,dw,pr,pw,basic_quorum, node_confirms,
+                  notfound_ok,timeout,include_context,{return_body, "returnbody"}],
                  Options ++ options(Rhc)).
 
 %% @doc Extract the options for the given `Keys' from the possible
