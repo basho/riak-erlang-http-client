@@ -228,6 +228,8 @@ rt_enqueue(Rhc, Bucket, Key, Options) ->
             ok;
         {error, {ok, "404", _Headers, _}} ->
             {error, notfound};
+        {error, {ok, "500", _Header_, <<"Error:\nrealtime_not_enabled\n">>}} ->
+                {error, realtime_not_enabled};
         {error, Error} ->
             {error, Error}
     end.
