@@ -62,7 +62,9 @@
          fetch_type/3, fetch_type/4,
          update_type/4, update_type/5,
          modify_type/5,
-         get_preflist/3
+         get_preflist/3,
+         rt_enqueue/3,
+         rt_enqueue/4
          ]).
 
 -include("raw_http.hrl").
@@ -192,6 +194,42 @@ get(Rhc, Bucket, Key, Options) ->
                 _ ->
                     {error, notfound}
             end;
+        {error, Error} ->
+            {error, Error}
+    end.
+
+%% @equiv rt_enqueue(Rhc, Bucket, Key, [])
+rt_enqueue(Rhc, Bucket, Key) ->
+    rt_enqueue(Rhc, Bucket, Key, []).
+
+%% @doc Get the object stored under the given bucket and key, and put
+%% it on the realtime repl queue
+%%
+%%      Allowed options are:
+%%      <dl>
+%%        <dt>`r'</dt>
+%%          <dd>The 'R' value to use for the read</dd>
+%%        <dt>`pr'</dt>
+%%          <dd>The 'PR' value to use for the read</dd>
+%%        <dt>`timeout'</dt>
+%%          <dd>The server-side timeout for the operation, in ms</dd>
+%%      </dl>
+%%
+%%      The term in the second position of the error tuple will be
+%%      `notfound' if the key was not found. It will be
+%%      `realtime_not_enabled' if realtime repl is not enabled.
+%% @spec rt_enqueue(rhc(), bucket(), key(), proplist())
+%%          -> {ok, riakc_obj()}|{error, term()}
+rt_enqueue(Rhc, Bucket, Key, Options) ->
+    Qs = get_q_params(Rhc, Options),
+    Url = make_rtenqueue_url(Rhc, Bucket, Key, Qs),
+    case request(post, Url, ["204"], [], [], Rhc) of
+        {ok, _Status, _Headers, _Body} ->
+            ok;
+        {error, {ok, "404", _Headers, _}} ->
+            {error, notfound};
+        {error, {ok, "500", _Header_, <<"Error:\nrealtime_not_enabled\n">>}} ->
+                {error, realtime_not_enabled};
         {error, Error} ->
             {error, Error}
     end.
@@ -844,6 +882,18 @@ make_preflist_url(Rhc, BucketAndType, Key) ->
        [ ["buckets", "/", Bucket,"/"] || Bucket =/= undefined ],
        [ [ "keys", "/", Key,"/" ] || Key =/= undefined],
        [ ["preflist/"] ]]).
+
+%% @private create the RTEnqueue URL
+make_rtenqueue_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
+    {Type, Bucket} = extract_bucket_type(BucketAndType),
+    lists:flatten(
+        [root_url(Rhc),
+         "rtq", %% THE RTENEQUEUE URL prefix
+         [ ["/", mochiweb_util:quote_plus(Type)] || Type =/= undefined ],
+         [ ["/", mochiweb_util:quote_plus(Bucket)] || Bucket =/= undefined ],
+         [ ["/", mochiweb_util:quote_plus(Key)] || Key =/= undefined],
+         [ ["?", mochiweb_util:urlencode(Query)] || Query =/= [] ]
+        ]).
 
 %% @doc Generate a counter url.
 -spec make_counter_url(rhc(), term(), term(), list()) -> iolist().
