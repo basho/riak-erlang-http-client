@@ -17,3 +17,10 @@ distclean: clean
 
 doc:
 	@./rebar doc skip_deps=true
+
+compile: deps
+	@./rebar compile
+
+# Erlang-specific build steps
+DIALYZER_APPS = kernel stdlib erts crypto compiler hipe syntax_tools
+include tools.mk

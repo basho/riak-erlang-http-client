@@ -69,7 +69,9 @@
          aae_merge_branches/3,
          aae_fetch_clocks/3,
          aae_range_tree/7,
-         aae_range_clocks/5
+         aae_range_clocks/5,
+         aae_find_keys/5,
+         aae_object_stats/4
          ]).
 
 -include("raw_http.hrl").
@@ -82,6 +84,12 @@
 
 -export_type([rhc/0]).
 -opaque rhc() :: #rhc{}.
+
+-type key_range() :: {riakc_obj:key(), riakc_obj:key()} | all.
+-type segment_filter() :: {list(pos_integer()), tree_size()} | all.
+-type modified_range() :: {ts(), ts()} | all.
+-type ts() :: pos_integer().
+-type hash_method() :: pre_hash | {rehash, non_neg_integer()}.
 
 -type tree_size() :: xxsmall| xsmall| small| medium| large| xlarge.
 
@@ -279,7 +287,7 @@ aae_merge_branches(Rhc, NVal, Branches) ->
 -spec aae_fetch_clocks(rhc(),
                        NVal::pos_integer(),
                        Segments::list(pos_integer())) ->
-                              {ok, {keysclocks, [{{riak_object:bucket(), riak_object:key()}, binary()}]}} |
+                              {ok, {keysclocks, [{{riakc_obj:bucket(), riakc_obj:key()}, binary()}]}} |
                               {error, any()}.
 aae_fetch_clocks(Rhc, NVal, Segments) ->
     Url = make_cached_aae_url(Rhc, keysclocks, NVal, Segments),
@@ -313,18 +321,10 @@ aae_fetch_clocks(Rhc, NVal, Segments) ->
 %% is for those of you worried about hash collisions.  NOTE: what is
 %% returned is mochijson2 style {struct, ETC} terms, as this is what
 %% leveled_tictact:import_tree expects
--spec aae_range_tree(rhc(), riak_object:bucket(),
-                     KeyRange, TreeSize,
-                     SegmentFilter, ModifiedRange, HashMethod) ->
-                            {ok, {tree, Tree}} | {error, any()} when
-      KeyRange :: {Key, Key} | all,
-      Key :: binary(),
-      TreeSize :: tree_size(),
-      SegmentFilter:: {list(pos_integer()), TreeSize} | all,
-      ModifiedRange :: {Date, Date} | all,
-      Date :: pos_integer(),
-      HashMethod :: pre_hash | {rehash, non_neg_integer()},
-      Tree::any().
+-spec aae_range_tree(rhc(), riakc_obj:bucket(),
+                     key_range(), tree_size(),
+                     segment_filter(), modified_range(), hash_method()) ->
+                            {ok, {tree, Tree::any()}} | {error, any()}.
 aae_range_tree(Rhc, Bucket, KeyRange, TreeSize, SegmentFilter, ModifiedRange, HashMethod) ->
     {Type, Bucket} = extract_bucket_type(Bucket),
     Url =
@@ -345,19 +345,9 @@ aae_range_tree(Rhc, Bucket, KeyRange, TreeSize, SegmentFilter, ModifiedRange, Ha
             {error, Error}
     end.
 
--spec aae_range_clocks(rhc(),
-                       riak_object:bucket(),
-                       KeyRange,
-                       SegmentFilter,
-                       ModifiedRange) ->
-                              {ok, {keysclocks, [{{riak_object:bucket(), riak_object:key()}, binary()}]}} |
-                              {error, any()} when
-      KeyRange :: {Key, Key} | all,
-      Key :: binary(),
-      SegmentFilter:: {list(pos_integer()), TreeSize} | all,
-      TreeSize :: tree_size(),
-      ModifiedRange :: {Date, Date} | all,
-      Date :: pos_integer().
+-spec aae_range_clocks(rhc(), riakc_obj:bucket(), key_range(), segment_filter(), modified_range()) ->
+                              {ok, {keysclocks, [{{riakc_obj:bucket(), riakc_obj:key()}, binary()}]}} |
+                              {error, any()}.
 aae_range_clocks(Rhc, Bucket, KeyRange, SegmentFilter, ModifiedRange) ->
     {Type, Bucket} = extract_bucket_type(Bucket),
     Url =
@@ -378,6 +368,95 @@ aae_range_clocks(Rhc, Bucket, KeyRange, SegmentFilter, ModifiedRange) ->
             {error, Error}
     end.
 
+%% @doc aae_find_keys folds over the tictacaae store to get
+%% operational information. `Rhc' is the client. `Bucket' is the
+%% bucket to fold over. `KeyRange' as before is a two tuple of
+%% `{Start, End}' where both ` Start' and `End' are binaries that
+%% represent the first and last key of a range to fold over. The atom
+%% `all' means all fol over keys in the bucket. `ModifiedRange' is a
+%% pair `{StartDate, EndDate}' or 32-bit integer unix timestamps, or
+%% the atom `all', that limits the fold to only the keys that have a
+%% last-modified date in the range. the `Query' is either
+%% `{sibling_coun, N}` or `{object_size, N}' where `N' is an
+%% integer. for `sibling_count' `N' means return all keys that have
+%% more than `N' siblings. NOTE: 1 sibling means a single value in
+%% this implementation, therefore if you want all keys that have more
+%% than a single value AT THE VNODE then `{sibling_count, 1}' is your
+%% query. NOTE NOTE: It is possible that all N vnodes have a single
+%% value, and that value is different on each vnode (temporarily
+%% only), this query would not detect that state. For `object_size' it
+%% means return all keys whose object size is greater than `N'. The
+%% result is a list of pairs `{Key, Count | Size}'
+-spec aae_find_keys(rhc(), riakc_obj:bucket(), key_range(), modified_range(), Query) ->
+                           {ok, {keys, list({riakc_obj:key(), pos_integer()})}} |
+                           {error, any()} when
+      Query :: {sibling_count, pos_integer()} | {object_size, pos_integer()}.
+aae_find_keys(Rhc, Bucket, KeyRange, ModifiedRange, Query) ->
+    {Type, Bucket} = extract_bucket_type(Bucket),
+    {Prefix, Suffix} =
+        case element(1, Query) of
+            sibling_count -> {"siblings", "counts"};
+            object_size -> {"objectsizes", "sizes"}
+        end,
+    Url =
+        lists:flatten(
+          [root_url(Rhc),
+           Prefix, "/",
+           [ [ "types", "/", mochiweb_util:quote_plus(Type), "/"] || Type =/= undefined ],
+           "buckets", "/", mochiweb_util:quote_plus(Bucket),"/",
+           Suffix, "/",
+           integer_to_list(element(2, Query)),
+           "?filter=", encode_aae_find_keys_filter(KeyRange, ModifiedRange)
+          ]),
+
+    case request(get, Url, ["200"], [], [], Rhc) of
+        {ok, _Status, _Headers, Body} ->
+            {struct, Response} = mochijson2:decode(Body),
+            {ok, erlify_aae_find_keys(Response)};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+%% @doc aae_find_keys folds over the tictacaae store to get
+%% operational information. `Rhc' is the client. `Bucket' is the
+%% bucket to fold over. `KeyRange' as before is a two tuple of
+%% `{Start, End}' where both ` Start' and `End' are binaries that
+%% represent the first and last key of a range to fold over. The atom
+%% `all' means all fol over keys in the bucket. `ModifiedRange' is a
+%% pair `{StartDate, EndDate}' or 32-bit integer unix timestamps, or
+%% the atom `all', that limits the fold to only the keys that have a
+%% last-modified date in the range. the `Query' is either
+%% `{sibling_coun, N}` or `{object_size, N}' where `N' is an
+%% integer. for `sibling_count' `N' means return all keys that have
+%% more than `N' siblings. NOTE: 1 sibling means a single value in
+%% this implementation, therefore if you want all keys that have more
+%% than a single value AT THE VNODE then `{sibling_count, 1}' is your
+%% query. NOTE NOTE: It is possible that all N vnodes have a single
+%% value, and that value is different on each vnode (temporarily
+%% only), this query would not detect that state. For `object_size' it
+%% means return all keys whose object size is greater than `N'. The
+%% result is a list of pairs `{Key, Count | Size}'
+-spec aae_object_stats(rhc(), riakc_obj:bucket(), key_range(), modified_range()) ->
+                           {ok, {stats, list({Key::atom(), Val::atom() | list()})}} |
+                           {error, any()}.
+aae_object_stats(Rhc, Bucket, KeyRange, ModifiedRange) ->
+    {Type, Bucket} = extract_bucket_type(Bucket),
+    Url =
+        lists:flatten(
+          [root_url(Rhc),
+          "objectstats/",
+           [ [ "types", "/", mochiweb_util:quote_plus(Type), "/"] || Type =/= undefined ],
+           "buckets", "/", mochiweb_util:quote_plus(Bucket),
+           "?filter=", encode_aae_find_keys_filter(KeyRange, ModifiedRange)
+          ]),
+
+    case request(get, Url, ["200"], [], [], Rhc) of
+        {ok, _Status, _Headers, Body} ->
+            {struct, Response} = mochijson2:decode(Body),
+            {ok, {stats, erlify_aae_object_stats(Response)}};
+        {error, Error} ->
+            {error, Error}
+    end.
 
 %% @equiv put(Rhc, Object, [])
 put(Rhc, Object) ->
@@ -1043,7 +1122,7 @@ make_rtenqueue_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
 -spec make_cached_aae_url(rhc(),
                           root | branch | keysclocks,
                           NVal::pos_integer(),
-                          Filter::proplist:proplist()) ->
+                          Filter::proplists:proplist()) ->
                                  iolist().
 make_cached_aae_url(Rhc, Type, NVal, Filter) ->
     lists:flatten(
@@ -1062,16 +1141,19 @@ encode_aae_cached_filter(Filter) ->
     JSON = mochijson2:encode(Filter),
     base64:encode_to_string(lists:flatten(JSON)).
 
+-spec encode_aae_find_keys_filter(key_range(), modified_range()) ->
+                                         string().
+encode_aae_find_keys_filter(KeyRange, ModifiedRange) ->
+    FilterElems = [EncodeFun(FilterElem) || {EncodeFun, FilterElem} <-
+                                  [{fun encode_key_range/1, KeyRange},
+                                   {fun encode_modified_range/1, ModifiedRange}]
+                  ],
+    JSON = mochijson2:encode({struct, lists:flatten(FilterElems)}),
+    base64:encode_to_string(iolist_to_binary(JSON)).
+
 %% @private create a base64 encoded JSON string used by aae_range_* API
--spec encode_aae_range_filter(KeyRange, SegmentFilter, ModifiedRange, HashMethod) ->
-                                     string() when
-      KeyRange :: {Key, Key} | all,
-      Key :: binary(),
-      TreeSize :: tree_size(),
-      SegmentFilter:: {list(pos_integer()), TreeSize} | all,
-      ModifiedRange :: {Date, Date} | all,
-      HashMethod :: pre_hash | {rehash, non_neg_integer()} | undefined,
-      Date :: pos_integer().
+-spec encode_aae_range_filter(key_range(), segment_filter(), modified_range(), undefined | hash_method()) ->
+                                     string().
 encode_aae_range_filter(KeyRange, SegmentFilter, ModifiedRange, HashMethod) ->
     FilterElems = [EncodeFun(FilterElem) || {EncodeFun, FilterElem} <-
                                   [{fun encode_key_range/1, KeyRange},
@@ -1227,7 +1309,7 @@ erlify_aae_tree([{<<"tree">>, Tree}]) ->
 
 
 %% @doc convert the aae fold root response to an erlang term
--spec erlify_aae_root([{Key::binary(), Value::base64:ascii_string()}]) ->
+-spec erlify_aae_root([{Key::binary(), Value::string()}]) ->
                              {root, binary()}.
 erlify_aae_root([{<<"root">>, Base64Root}]) ->
     {root, base64:decode(Base64Root)}.
@@ -1239,24 +1321,50 @@ erlify_aae_branches([{<<"branches">>, Branches}]) ->
     DecodedBranches = [erlify_aae_branch(Branch) || Branch <- Branches],
     {branches, DecodedBranches}.
 
--spec erlify_aae_branch({stuct, proplists:proplist()}) ->
+-spec erlify_aae_branch({struct, list(any())}) ->
                                {integer(), binary()}.
 erlify_aae_branch({struct, Props}) ->
     BranchId = proplists:get_value(<<"branch-id">>, Props),
     BranchBase64 = proplists:get_value(<<"branch">>, Props),
     {BranchId, base64:decode(BranchBase64)}.
 
+-spec erlify_aae_object_stats(list()) -> list().
+erlify_aae_object_stats(Stats) ->
+    lists:foldl(fun({K, V}, Acc) ->
+                        case V of
+                            I when is_integer(I) ->
+                                [{K, I} | Acc];
+                            {struct, L} ->
+                                InnerStats = erlify_aae_object_stats(L),
+                                [{K, InnerStats} | Acc]
+                        end
+                end,
+                [],
+                Stats).
+
+-spec erlify_aae_find_keys([{Key::binary(), Val::non_neg_integer() | list(any())}]) ->
+                                  {keys, list({riakc_obj:key(), non_neg_integer()})}.
+erlify_aae_find_keys([{<<"results">>, Keys}]) ->
+    {keys, [erlify_aae_find_key(KV) || KV <- Keys]}.
+
+-spec erlify_aae_find_key({struct, list()}) ->
+                                 {riakc_obj:bucket(), pos_integer()}.
+erlify_aae_find_key({struct, Props}) ->
+    Key = proplists:get_value(<<"key">>, Props),
+    Val = proplists:get_value(<<"value">>, Props),
+    {Key, Val}.
+
 %% @doc convert the aae fold branches response to an erlang term
--spec erlify_aae_keysclocks([{Key::binary(), Value::base64:ascii_string()}]) ->
+-spec erlify_aae_keysclocks([{Key::binary(), Value::string()}]) ->
                              {keysclocks,
-                              [{{riak_object:bucket(), riak_object:key()}, OpaqueVclock::binary()}]
+                              [{{binary() | {binary(), binary()}, binary()}, OpaqueVclock::binary()}]
                              }.
 erlify_aae_keysclocks([{<<"keys-clocks">>, KeysClocks}]) ->
     DecodedClocks = [erlify_aae_keyclock(KC) || KC <- KeysClocks],
     {keysclocks, DecodedClocks}.
 
--spec erlify_aae_keyclock({stuct, proplists:proplist()}) ->
-                               {{riak_object:bucket(), riak_object:key()}, binary()}.
+-spec erlify_aae_keyclock({struct, proplists:proplist()}) ->
+                               {{binary() | {binary(), binary()}, binary()}, binary()}.
 erlify_aae_keyclock({struct, Props}) ->
     BType = proplists:get_value(<<"bucket-type">>, Props, <<"default">>),
     Bucket = proplists:get_value(<<"bucket">>, Props),
