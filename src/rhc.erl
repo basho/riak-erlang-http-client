@@ -1016,7 +1016,7 @@ client_id(#rhc{options=RhcOptions}, Options) ->
 %% @spec random_client_id() -> client_id()
 random_client_id() ->
     {{Y,Mo,D},{H,Mi,S}} = erlang:universaltime(),
-    {_,_,NowPart} = now(),
+    {_,_,NowPart} = os:timestamp(),
     Id = erlang:phash2([Y,Mo,D,H,Mi,S,node(),NowPart]),
     base64:encode_to_string(<<Id:32>>).
 
@@ -1199,7 +1199,7 @@ encode_hash_method(_) ->
 make_counter_url(Rhc, Bucket, Key, Query) ->
     lists:flatten(
       [root_url(Rhc),
-       <<"buckets">>, "/", mochiweb_util:quote_plus(Bucket), "/", 
+       <<"buckets">>, "/", mochiweb_util:quote_plus(Bucket), "/",
        <<"counters">>, "/", mochiweb_util:quote_plus(Key), "?",
        [ [mochiweb_util:urlencode(Query)] || Query =/= []]]).
 
@@ -1437,8 +1437,8 @@ detect_bucket_flags(Query) ->
      proplists:get_value(?Q_BUCKETS, Query, ?Q_FALSE) =/= ?Q_FALSE}.
 
 -ifdef(TEST).
-%% @doc validate that bucket, keys and link specifications do not contain
-%%      unescaped slashes
+%% validate that bucket, keys and link specifications do not contain
+%% unescaped slashes
 %%
 %% See section on URL Escaping information at
 %% http://docs.basho.com/riak/latest/dev/references/http/

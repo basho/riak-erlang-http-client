@@ -1,26 +1,29 @@
 .PHONY: rel deps doc
 
-all: deps
-	@./rebar compile
+PROJDIR := $(realpath $(CURDIR))
+REBAR := $(PROJDIR)/rebar3
 
-deps:
-	@./rebar get-deps
+all: deps compile
 
-clean:
-	@./rebar clean
-
-test: all
-		@./rebar skip_deps=true eunit
-
-distclean: clean
-	@./rebar delete-deps
-
-doc:
-	@./rebar doc skip_deps=true
+lint: xref dialyzer
 
 compile: deps
-	@./rebar compile
+	$(REBAR) compile
 
-# Erlang-specific build steps
-DIALYZER_APPS = kernel stdlib erts crypto compiler hipe syntax_tools
-include tools.mk
+deps:
+	@$(REBAR) get-deps
+
+clean:
+	@$(REBAR) clean
+
+test: all
+	@$(REBAR) eunit
+
+distclean: clean
+	@$(REBAR) clean --all
+
+doc:
+	@$(REBAR) edoc
+
+dialyzer:
+	@$(REBAR) dialyzer
