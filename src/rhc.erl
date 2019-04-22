@@ -176,7 +176,8 @@ get_server_stats(Rhc) ->
 
 fetch(Rhc, QueueName) ->
     QParams = [{object_format, internal}],
-    case request(get, fetch_url(QueueName, QParams), ["200"], [], [], Rhc) of
+    URL = fetch_url(Rhc, QueueName, QParams),
+    case request(get, URL, ["200"], [], [], Rhc) of
         {ok, _status, _Headers, Body} ->
             case Body of
                 <<0:8/integer>> ->
@@ -193,12 +194,12 @@ fetch(Rhc, QueueName) ->
             {error, Error}
     end.
 
-
-fetch_url(QueueName, Params) ->
-    binary_to_list(iolist_to_binary(["queuename/",
-                                    atom_to_list(QueueName),
-                                    "?",
-                                    mochiweb_util:urlencode(Params)])).
+fetch_url(Rhc, QueueName, Params) ->
+    binary_to_list(iolist_to_binary([root_url(Rhc),
+                                        "queuename/",
+                                        mochiweb_util:quote_plus(QueueName),
+                                        "?",
+                                        mochiweb_util:urlencode(Params)])).
 
 crc_check(CRC, Bin) ->
     case erlang:crc32(Bin) of
