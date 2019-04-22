@@ -35,6 +35,7 @@
          get_server_info/1,
          get_server_stats/1,
          get/3, get/4,
+         fetch/2,
          put/2, put/3,
          delete/3, delete/4, delete_obj/2, delete_obj/3,
          list_buckets/1,
@@ -172,6 +173,39 @@ get_server_stats(Rhc) ->
         {error, Error} ->
             {error, Error}
     end.
+
+fetch(Rhc, QueueName) ->
+    QParams = [{object_format, internal}],
+    case request(get, fetch_url(QueueName, QParams), ["200"], [], [], Rhc) of
+        {ok, _status, _Headers, Body} ->
+            case Body of
+                <<0:8/integer>> ->
+                    {ok, queue_empty};
+                <<1:8/integer, 1:8/integer,
+                    TCL:32/integer, TombClockBin:TCL/binary,
+                    CRC:32/integer, ObjBin/binary>> ->
+                    {crc_check(CRC, ObjBin),
+                        {deleted, binary_to_term(TombClockBin), ObjBin}};
+                <<1:8/integer, 0:8/integer, CRC:32/integer, ObjBin/binary>> ->
+                    {crc_check(CRC, ObjBin), ObjBin}
+            end;
+        {error, Error} ->
+            {error, Error}
+    end.
+
+
+fetch_url(QueueName, Params) ->
+    binary_to_list(iolist_to_binary(["queuename/",
+                                    atom_to_list(QueueName),
+                                    "?",
+                                    mochiweb_util:urlencode(Params)])).
+
+crc_check(CRC, Bin) ->
+    case erlang:crc32(Bin) of
+        CRC -> ok;
+        _ -> crc_wonky
+    end.
+
 
 %% @equiv get(Rhc, Bucket, Key, [])
 get(Rhc, Bucket, Key) ->
