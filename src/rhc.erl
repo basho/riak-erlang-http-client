@@ -71,6 +71,7 @@
          aae_fetch_clocks/3,
          aae_range_tree/7,
          aae_range_clocks/5,
+         aae_range_replkeys/5,
          aae_find_keys/5,
          aae_object_stats/4
          ]).
@@ -112,7 +113,7 @@ create(IP, Port, Prefix, Opts0) when is_list(IP), is_integer(Port),
                                      is_list(Prefix), is_list(Opts0) ->
     Opts = case proplists:lookup(client_id, Opts0) of
                none -> [{client_id, random_client_id()}|Opts0];
-               Bin when is_binary(Bin) ->
+               {client_id, Bin} when is_binary(Bin) ->
                    [{client_id, binary_to_list(Bin)}
                     | [ O || O={K,_} <- Opts0, K =/= client_id ]];
                _ ->
@@ -399,6 +400,34 @@ aae_range_clocks(Rhc, Bucket, KeyRange, SegmentFilter, ModifiedRange) ->
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {ok, erlify_aae_keysclocks(Response)};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+-spec aae_range_replkeys(rhc(), riakc_obj:bucket(),
+                            key_range(), modified_range(),
+                            atom()) ->
+                                {ok, non_neg_integer()} |
+                                    {error, any()}.
+aae_range_replkeys(Rhc, Bucket, KeyRange, ModifiedRange, QueueName) ->
+    {Type, Bucket} = extract_bucket_type(Bucket),
+    Url =
+        lists:flatten(
+          [root_url(Rhc),
+           "rangerepl", "/", %% the AAE-Fold range fold prefix
+           [ [ "types", "/", mochiweb_util:quote_plus(Type), "/"]
+                || Type =/= undefined ],
+           "buckets", "/", mochiweb_util:quote_plus(Bucket),
+           "queuename", "/", mochiweb_util:quote_plus(QueueName),
+           "?filter=",
+            encode_aae_range_filter(KeyRange, all, ModifiedRange, undefined)
+          ]),
+
+    case request(get, Url, ["200"], [], [], Rhc) of
+        {ok, _Status, _Headers, Body} ->
+            {struct, Response} = mochijson2:decode(Body),
+            [{<<"dispatched_count">>, DispatchedCount}] = Response,
+            {ok, DispatchedCount};
         {error, Error} ->
             {error, Error}
     end.
@@ -1157,7 +1186,7 @@ make_rtenqueue_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
 -spec make_cached_aae_url(rhc(),
                           root | branch | keysclocks,
                           NVal::pos_integer(),
-                          Filter::proplists:proplist()) ->
+                          Filter::proplists:proplist()|undefined) ->
                                  iolist().
 make_cached_aae_url(Rhc, Type, NVal, Filter) ->
     lists:flatten(
