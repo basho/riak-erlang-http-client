@@ -417,7 +417,7 @@ aae_range_replkeys(Rhc, Bucket, KeyRange, ModifiedRange, QueueName) ->
            "rangerepl", "/", %% the AAE-Fold range fold prefix
            [ [ "types", "/", mochiweb_util:quote_plus(Type), "/"]
                 || Type =/= undefined ],
-           "buckets", "/", mochiweb_util:quote_plus(Bucket),
+           "buckets", "/", mochiweb_util:quote_plus(Bucket), "/",
            "queuename", "/", mochiweb_util:quote_plus(QueueName),
            "?filter=",
             encode_aae_range_filter(KeyRange, all, ModifiedRange, undefined)
