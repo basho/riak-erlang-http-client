@@ -361,8 +361,8 @@ aae_fetch_clocks(Rhc, NVal, Segments) ->
                      key_range(), tree_size(),
                      segment_filter(), modified_range(), hash_method()) ->
                             {ok, {tree, Tree::any()}} | {error, any()}.
-aae_range_tree(Rhc, Bucket, KeyRange, TreeSize, SegmentFilter, ModifiedRange, HashMethod) ->
-    {Type, Bucket} = extract_bucket_type(Bucket),
+aae_range_tree(Rhc, BucketType, KeyRange, TreeSize, SegmentFilter, ModifiedRange, HashMethod) ->
+    {Type, Bucket} = extract_bucket_type(BucketType),
     Url =
         lists:flatten(
           [root_url(Rhc),
@@ -384,8 +384,8 @@ aae_range_tree(Rhc, Bucket, KeyRange, TreeSize, SegmentFilter, ModifiedRange, Ha
 -spec aae_range_clocks(rhc(), riakc_obj:bucket(), key_range(), segment_filter(), modified_range()) ->
                               {ok, {keysclocks, [{{riakc_obj:bucket(), riakc_obj:key()}, binary()}]}} |
                               {error, any()}.
-aae_range_clocks(Rhc, Bucket, KeyRange, SegmentFilter, ModifiedRange) ->
-    {Type, Bucket} = extract_bucket_type(Bucket),
+aae_range_clocks(Rhc, BucketType, KeyRange, SegmentFilter, ModifiedRange) ->
+    {Type, Bucket} = extract_bucket_type(BucketType),
     Url =
         lists:flatten(
           [root_url(Rhc),
@@ -409,8 +409,8 @@ aae_range_clocks(Rhc, Bucket, KeyRange, SegmentFilter, ModifiedRange) ->
                             atom()) ->
                                 {ok, non_neg_integer()} |
                                     {error, any()}.
-aae_range_replkeys(Rhc, Bucket, KeyRange, ModifiedRange, QueueName) ->
-    {Type, Bucket} = extract_bucket_type(Bucket),
+aae_range_replkeys(Rhc, BucketType, KeyRange, ModifiedRange, QueueName) ->
+    {Type, Bucket} = extract_bucket_type(BucketType),
     Url =
         lists:flatten(
           [root_url(Rhc),
@@ -455,8 +455,8 @@ aae_range_replkeys(Rhc, Bucket, KeyRange, ModifiedRange, QueueName) ->
                            {ok, {keys, list({riakc_obj:key(), pos_integer()})}} |
                            {error, any()} when
       Query :: {sibling_count, pos_integer()} | {object_size, pos_integer()}.
-aae_find_keys(Rhc, Bucket, KeyRange, ModifiedRange, Query) ->
-    {Type, Bucket} = extract_bucket_type(Bucket),
+aae_find_keys(Rhc, BucketType, KeyRange, ModifiedRange, Query) ->
+    {Type, Bucket} = extract_bucket_type(BucketType),
     {Prefix, Suffix} =
         case element(1, Query) of
             sibling_count -> {"siblings", "counts"};
@@ -503,8 +503,8 @@ aae_find_keys(Rhc, Bucket, KeyRange, ModifiedRange, Query) ->
 -spec aae_object_stats(rhc(), riakc_obj:bucket(), key_range(), modified_range()) ->
                            {ok, {stats, list({Key::atom(), Val::atom() | list()})}} |
                            {error, any()}.
-aae_object_stats(Rhc, Bucket, KeyRange, ModifiedRange) ->
-    {Type, Bucket} = extract_bucket_type(Bucket),
+aae_object_stats(Rhc, BucketType, KeyRange, ModifiedRange) ->
+    {Type, Bucket} = extract_bucket_type(BucketType),
     Url =
         lists:flatten(
           [root_url(Rhc),
