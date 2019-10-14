@@ -85,6 +85,8 @@
 -export_type([rhc/0]).
 -opaque rhc() :: #rhc{}.
 
+-define(DEFAULT_TLS_OPTIONS, [{server_name_indication, disable}]).
+
 -type key_range() :: {riakc_obj:key(), riakc_obj:key()} | all.
 -type segment_filter() :: {list(pos_integer()), tree_size()} | all.
 -type modified_range() :: {ts(), ts()} | all.
@@ -109,14 +111,13 @@ create() ->
 %% @spec create(string(), integer(), string(), Options::list()) -> rhc()
 create(IP, Port, Prefix, Opts0) when is_list(IP), is_integer(Port),
                                      is_list(Prefix), is_list(Opts0) ->
-    Opts = case proplists:lookup(client_id, Opts0) of
-               none -> [{client_id, random_client_id()}|Opts0];
-               Bin when is_binary(Bin) ->
-                   [{client_id, binary_to_list(Bin)}
-                    | [ O || O={K,_} <- Opts0, K =/= client_id ]];
-               _ ->
-                   Opts0
-           end,
+    Opts = 
+        case proplists:lookup(client_id, Opts0) of
+            none ->
+                [{client_id, random_client_id()}|Opts0];
+            _ ->
+                Opts0
+        end,
     #rhc{ip=IP, port=Port, prefix=Prefix, options=Opts}.
 
 %% @doc Get the IP this client will connect to.
@@ -1122,7 +1123,7 @@ make_rtenqueue_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
 -spec make_cached_aae_url(rhc(),
                           root | branch | keysclocks,
                           NVal::pos_integer(),
-                          Filter::proplists:proplist()) ->
+                          Filter::proplists:proplist()|undefined) ->
                                  iolist().
 make_cached_aae_url(Rhc, Type, NVal, Filter) ->
     lists:flatten(
@@ -1390,15 +1391,10 @@ erlify_server_info(_Ignore, _) -> [].
 %% @doc Convert a preflist resource response to a proplist.
 erlify_preflist(Response) ->
     Preflist = [V || {_, V} <- proplists:get_value(<<"preflist">>, Response)],
-    [ lists:foldl(fun({K, V}, AccRec) -> erlify_preflist(K, V, AccRec) end,
-                 #preflist_item{}, P) || P <- Preflist ].
-
-erlify_preflist(<<"partition">>, Partition, Acc) ->
-    Acc#preflist_item{partition=Partition};
-erlify_preflist(<<"node">>, Node, Acc) ->
-    Acc#preflist_item{node=Node};
-erlify_preflist(<<"primary">>, IfPrimary, Acc) ->
-    Acc#preflist_item{primary=IfPrimary}.
+    {<<"partition">>, Partition} = lists:keyfind(<<"partition">>, 1, Preflist),
+    {<<"node">>, Node} = lists:keyfind(<<"node">>, 1, Preflist),
+    {<<"primary">>, IfPrimary} = lists:keyfind(<<"primary">>, 1, Preflist),
+    #preflist_item{partition = Partition, node = Node, primary = IfPrimary}.
 
 
 get_auth_header(Options) ->
@@ -1414,12 +1410,14 @@ get_auth_header(Options) ->
 get_ssl_options(Options) ->
     case proplists:get_value(is_ssl, Options) of
         true ->
-            [{is_ssl, true}] ++ case proplists:get_value(ssl_options, Options, []) of
-                X when is_list(X) ->
-                    [{ssl_options, X}];
-                _ ->
-                    [{ssl_options, []}]
-            end;
+            SSLOpts = 
+                case proplists:get_value(ssl_options, Options, []) of
+                    X when is_list(X) ->
+                        lists:ukeysort(1, X ++ ?DEFAULT_TLS_OPTIONS);
+                    _ ->
+                        ?DEFAULT_TLS_OPTIONS
+                end,
+            [{is_ssl, true}, {ssl_options, SSLOpts}];
         _ ->
             []
     end.
