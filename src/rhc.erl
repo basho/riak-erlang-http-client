@@ -115,9 +115,6 @@ create(IP, Port, Prefix, Opts0) when is_list(IP), is_integer(Port),
         case proplists:lookup(client_id, Opts0) of
             none ->
                 [{client_id, random_client_id()}|Opts0];
-            {client_id, Bin} when is_binary(Bin) ->
-                [{client_id, binary_to_list(Bin)}
-                    | proplist:delete(client_id, Opts0)];
             _ ->
                 Opts0
         end,
