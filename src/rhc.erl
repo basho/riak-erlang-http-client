@@ -1336,7 +1336,9 @@ erlify_aae_object_stats(Stats) ->
                                 [{K, I} | Acc];
                             {struct, L} ->
                                 InnerStats = erlify_aae_object_stats(L),
-                                [{K, InnerStats} | Acc]
+                                [{K, InnerStats} | Acc];
+                            [] ->
+                                [{K, []} | Acc]
                         end
                 end,
                 [],
