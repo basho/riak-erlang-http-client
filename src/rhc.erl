@@ -1122,8 +1122,8 @@ make_rtenqueue_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
 
 -spec make_cached_aae_url(rhc(),
                           root | branch | keysclocks,
-                          NVal::pos_integer(),
-                          Filter::proplists:proplist()) ->
+                          NVal :: pos_integer(),
+                          Filter :: proplists:proplist()|undefined) ->
                                  iolist().
 make_cached_aae_url(Rhc, Type, NVal, Filter) ->
     lists:flatten(
