@@ -35,6 +35,7 @@
          get_server_info/1,
          get_server_stats/1,
          get/3, get/4,
+         fetch/2,
          put/2, put/3,
          delete/3, delete/4, delete_obj/2, delete_obj/3,
          list_buckets/1,
@@ -70,6 +71,7 @@
          aae_fetch_clocks/3,
          aae_range_tree/7,
          aae_range_clocks/5,
+         aae_range_replkeys/5,
          aae_find_keys/5,
          aae_object_stats/4
          ]).
@@ -111,7 +113,7 @@ create(IP, Port, Prefix, Opts0) when is_list(IP), is_integer(Port),
                                      is_list(Prefix), is_list(Opts0) ->
     Opts = case proplists:lookup(client_id, Opts0) of
                none -> [{client_id, random_client_id()}|Opts0];
-               Bin when is_binary(Bin) ->
+               {client_id, Bin} when is_binary(Bin) ->
                    [{client_id, binary_to_list(Bin)}
                     | [ O || O={K,_} <- Opts0, K =/= client_id ]];
                _ ->
@@ -172,6 +174,40 @@ get_server_stats(Rhc) ->
         {error, Error} ->
             {error, Error}
     end.
+
+fetch(Rhc, QueueName) ->
+    QParams = [{object_format, internal}],
+    URL = fetch_url(Rhc, QueueName, QParams),
+    case request(get, URL, ["200"], [], [], Rhc) of
+        {ok, _status, _Headers, Body} ->
+            case Body of
+                <<0:8/integer>> ->
+                    {ok, queue_empty};
+                <<1:8/integer, 1:8/integer,
+                    TCL:32/integer, TombClockBin:TCL/binary,
+                    CRC:32/integer, ObjBin/binary>> ->
+                    {crc_check(CRC, ObjBin),
+                        {deleted, binary_to_term(TombClockBin), ObjBin}};
+                <<1:8/integer, 0:8/integer, CRC:32/integer, ObjBin/binary>> ->
+                    {crc_check(CRC, ObjBin), ObjBin}
+            end;
+        {error, Error} ->
+            {error, Error}
+    end.
+
+fetch_url(Rhc, QueueName, Params) ->
+    binary_to_list(iolist_to_binary([root_url(Rhc),
+                                        "queuename/",
+                                        mochiweb_util:quote_plus(QueueName),
+                                        "?",
+                                        mochiweb_util:urlencode(Params)])).
+
+crc_check(CRC, Bin) ->
+    case erlang:crc32(Bin) of
+        CRC -> ok;
+        _ -> crc_wonky
+    end.
+
 
 %% @equiv get(Rhc, Bucket, Key, [])
 get(Rhc, Bucket, Key) ->
@@ -365,6 +401,34 @@ aae_range_clocks(Rhc, BucketAndType, KeyRange, SegmentFilter, ModifiedRange) ->
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {ok, erlify_aae_keysclocks(Response)};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+-spec aae_range_replkeys(rhc(), riakc_obj:bucket(),
+                            key_range(), modified_range(),
+                            atom()) ->
+                                {ok, non_neg_integer()} |
+                                    {error, any()}.
+aae_range_replkeys(Rhc, BucketType, KeyRange, ModifiedRange, QueueName) ->
+    {Type, Bucket} = extract_bucket_type(BucketType),
+    Url =
+        lists:flatten(
+          [root_url(Rhc),
+           "rangerepl", "/", %% the AAE-Fold range fold prefix
+           [ [ "types", "/", mochiweb_util:quote_plus(Type), "/"]
+                || Type =/= undefined ],
+           "buckets", "/", mochiweb_util:quote_plus(Bucket), "/",
+           "queuename", "/", mochiweb_util:quote_plus(QueueName),
+           "?filter=",
+            encode_aae_range_filter(KeyRange, all, ModifiedRange, undefined)
+          ]),
+
+    case request(get, Url, ["200"], [], [], Rhc) of
+        {ok, _Status, _Headers, Body} ->
+            {struct, Response} = mochijson2:decode(Body),
+            [{<<"dispatched_count">>, DispatchedCount}] = Response,
+            {ok, DispatchedCount};
         {error, Error} ->
             {error, Error}
     end.
