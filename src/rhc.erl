@@ -361,8 +361,9 @@ aae_fetch_clocks(Rhc, NVal, Segments) ->
                      key_range(), tree_size(),
                      segment_filter(), modified_range(), hash_method()) ->
                             {ok, {tree, Tree::any()}} | {error, any()}.
-aae_range_tree(Rhc, BucketType, KeyRange, TreeSize, SegmentFilter, ModifiedRange, HashMethod) ->
-    {Type, Bucket} = extract_bucket_type(BucketType),
+aae_range_tree(Rhc, BucketAndType, KeyRange,
+                TreeSize, SegmentFilter, ModifiedRange, HashMethod) ->
+    {Type, Bucket} = extract_bucket_type(BucketAndType),
     Url =
         lists:flatten(
           [root_url(Rhc),
@@ -384,8 +385,8 @@ aae_range_tree(Rhc, BucketType, KeyRange, TreeSize, SegmentFilter, ModifiedRange
 -spec aae_range_clocks(rhc(), riakc_obj:bucket(), key_range(), segment_filter(), modified_range()) ->
                               {ok, {keysclocks, [{{riakc_obj:bucket(), riakc_obj:key()}, binary()}]}} |
                               {error, any()}.
-aae_range_clocks(Rhc, BucketType, KeyRange, SegmentFilter, ModifiedRange) ->
-    {Type, Bucket} = extract_bucket_type(BucketType),
+aae_range_clocks(Rhc, BucketAndType, KeyRange, SegmentFilter, ModifiedRange) ->
+    {Type, Bucket} = extract_bucket_type(BucketAndType),
     Url =
         lists:flatten(
           [root_url(Rhc),
@@ -455,8 +456,8 @@ aae_range_replkeys(Rhc, BucketType, KeyRange, ModifiedRange, QueueName) ->
                            {ok, {keys, list({riakc_obj:key(), pos_integer()})}} |
                            {error, any()} when
       Query :: {sibling_count, pos_integer()} | {object_size, pos_integer()}.
-aae_find_keys(Rhc, BucketType, KeyRange, ModifiedRange, Query) ->
-    {Type, Bucket} = extract_bucket_type(BucketType),
+aae_find_keys(Rhc, BucketAndType, KeyRange, ModifiedRange, Query) ->
+    {Type, Bucket} = extract_bucket_type(BucketAndType),
     {Prefix, Suffix} =
         case element(1, Query) of
             sibling_count -> {"siblings", "counts"};
@@ -503,8 +504,8 @@ aae_find_keys(Rhc, BucketType, KeyRange, ModifiedRange, Query) ->
 -spec aae_object_stats(rhc(), riakc_obj:bucket(), key_range(), modified_range()) ->
                            {ok, {stats, list({Key::atom(), Val::atom() | list()})}} |
                            {error, any()}.
-aae_object_stats(Rhc, BucketType, KeyRange, ModifiedRange) ->
-    {Type, Bucket} = extract_bucket_type(BucketType),
+aae_object_stats(Rhc, BucketAndType, KeyRange, ModifiedRange) ->
+    {Type, Bucket} = extract_bucket_type(BucketAndType),
     Url =
         lists:flatten(
           [root_url(Rhc),
@@ -1185,8 +1186,8 @@ make_rtenqueue_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
 
 -spec make_cached_aae_url(rhc(),
                           root | branch | keysclocks,
-                          NVal::pos_integer(),
-                          Filter::proplists:proplist()|undefined) ->
+                          NVal :: pos_integer(),
+                          Filter :: proplists:proplist()|undefined) ->
                                  iolist().
 make_cached_aae_url(Rhc, Type, NVal, Filter) ->
     lists:flatten(
@@ -1400,7 +1401,9 @@ erlify_aae_object_stats(Stats) ->
                                 [{K, I} | Acc];
                             {struct, L} ->
                                 InnerStats = erlify_aae_object_stats(L),
-                                [{K, InnerStats} | Acc]
+                                [{K, InnerStats} | Acc];
+                            [] ->
+                                Acc
                         end
                 end,
                 [],
