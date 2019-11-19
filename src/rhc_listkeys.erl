@@ -79,7 +79,7 @@ list_acceptor(Pid,PidRef,IbrowseRef,ParseState,Type) ->
             Pid ! {PidRef, {error, Error}};
         {ibrowse_async_response, IbrowseRef, []} ->
             %% ignore empty data
-            ok = ibrowse:stream_next(IbrowseRef),
+            _ = ibrowse:stream_next(IbrowseRef),
             list_acceptor(Pid,PidRef,IbrowseRef,ParseState,Type);
         {ibrowse_async_response, IbrowseRef, Data} ->
                 try
@@ -98,7 +98,7 @@ list_acceptor(Pid,PidRef,IbrowseRef,ParseState,Type) ->
             if Status =/= "200" ->
                     Pid ! {PidRef, {error, {Status, Headers}}};
                true ->
-                    ok = ibrowse:stream_next(IbrowseRef),
+                    _ = ibrowse:stream_next(IbrowseRef),
                     list_acceptor(Pid,PidRef,IbrowseRef,ParseState,Type)
             end
     end.
