@@ -405,6 +405,11 @@ aae_range_clocks(Rhc, BucketAndType, KeyRange, SegmentFilter, ModifiedRange) ->
             {error, Error}
     end.
 
+%% @doc aae_range_repllkeys
+%% Fold over a range of keys and queue up those keys to be replicated to the
+%% other site.  Once the keys are replicated the objects will then be fetched,
+%% as long as a site is consuming from that replication queue.
+%% Will return the number of keys which have been queued for replication.
 -spec aae_range_replkeys(rhc(), riakc_obj:bucket(),
                             key_range(), modified_range(),
                             atom()) ->
