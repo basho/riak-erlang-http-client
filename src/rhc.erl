@@ -567,7 +567,8 @@ aae_reap_tombs(Rhc,
     case request(get, Url, ["200"], [], [], Rhc) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
-            {ok, erlify_aae_find_keys(Response)};
+            [{<<"dispatched_count">>, DispatchedCount}] = Response,
+            {ok, DispatchedCount};
         {error, Error} ->
             {error, Error}
     end.
@@ -614,7 +615,8 @@ aae_erase_keys(Rhc,
     case request(get, Url, ["200"], [], [], Rhc) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
-            {ok, erlify_aae_find_keys(Response)};
+            [{<<"dispatched_count">>, DispatchedCount}] = Response,
+            {ok, DispatchedCount};
         {error, Error} ->
             {error, Error}
     end.
