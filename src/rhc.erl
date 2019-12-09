@@ -1397,6 +1397,8 @@ encode_key_range({Start, End}) when is_binary(Start), is_binary(End) ->
                                    [] | {binary(), {struct, list()}}.
 encode_segment_filter(all) ->
     [];
+encode_segment_filter(undefined) ->
+    [];
 encode_segment_filter({SegList, TreeSize}) when is_list(SegList), is_atom(TreeSize) ->
     {<<"segment_filter">>, {struct, [{<<"segments">>, SegList},
                                      {<<"tree_size">>, atom_to_list(TreeSize)}]}}.
