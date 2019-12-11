@@ -76,7 +76,9 @@
          aae_find_tombs/5,
          aae_reap_tombs/6,
          aae_erase_keys/6,
-         aae_object_stats/4
+         aae_object_stats/4,
+         aae_list_buckets/1,
+         aae_list_buckets/2
          ]).
 
 -include("raw_http.hrl").
@@ -658,6 +660,32 @@ aae_object_stats(Rhc, BucketAndType, KeyRange, ModifiedRange) ->
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {ok, {stats, erlify_aae_object_stats(Response)}};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+%% @doc
+%% List all the buckets with references in the AAE store.  For reasonable 
+%% (e.g. < o(1000)) this should be quick and efficient unless using the
+%% leveled_so parallel store.  A minimum n_val can be passed if known.  If
+%% there are buckets (with keys) below the minimum n_val they may not be
+%% detecting in the query.  Will default to 1.
+-spec aae_list_buckets(rhc()) -> {ok, list(riakc_obj:bucket())}.
+aae_list_buckets(Rhc) ->
+    Url = lists:flatten([root_url(Rhc), "aaebucketlist"]),
+    aae_list_buckets(Rhc, Url).
+
+-spec aae_list_buckets(rhc(), pos_integer()|string())
+                                            -> {ok, list(riakc_obj:bucket())}.
+aae_list_buckets(Rhc, MinNVal) when is_integer(MinNVal), MinNVal > 0 ->
+    Url = lists:flatten([root_url(Rhc), "aaebucketlist",
+                            "?filter=", integer_to_list(MinNVal)]),
+    aae_list_buckets(Rhc, Url);
+aae_list_buckets(Rhc, Url) when is_list(Url) ->
+    case request(get, Url, ["200"], [], [], Rhc) of
+        {ok, _Status, _Headers, Body} ->
+            {struct, [{<<"results">>, Response}]} = mochijson2:decode(Body),
+            {ok, erlify_aae_buckets(Response)};
         {error, Error} ->
             {error, Error}
     end.
@@ -1616,6 +1644,22 @@ erlify_aae_keyclock({struct, Props}) ->
                 {Type, Bucket}
         end,
     {{BucketAndType, Key}, base64:decode(Clock)}.
+
+
+-spec erlify_aae_buckets(list()) -> list(riakc_obj:bucket()).
+erlify_aae_buckets(BucketList) ->
+    lists:map(fun erlify_aae_bucket/1, BucketList).
+
+-spec erlify_aae_bucket({struct, proplists:proplist()}) -> riakc_obj:bucket().
+erlify_aae_bucket({struct, BucketProps}) ->
+    BType = proplists:get_value(<<"bucket-type">>, BucketProps, <<"default">>),
+    Bucket = proplists:get_value(<<"bucket">>, BucketProps),
+    case BType of
+        <<"default">> ->
+            Bucket;
+        Type when is_binary(Type) ->
+            {Type, Bucket}
+    end.
 
 %% @doc Convert a stats-resource response to an erlang-term server
 %%      information proplist.
