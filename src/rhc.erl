@@ -35,6 +35,7 @@
          get_server_info/1,
          get_server_stats/1,
          get/3, get/4,
+         fetch/2,
          put/2, put/3,
          delete/3, delete/4, delete_obj/2, delete_obj/3,
          list_buckets/1,
@@ -70,8 +71,14 @@
          aae_fetch_clocks/3,
          aae_range_tree/7,
          aae_range_clocks/5,
+         aae_range_replkeys/5,
          aae_find_keys/5,
-         aae_object_stats/4
+         aae_find_tombs/5,
+         aae_reap_tombs/6,
+         aae_erase_keys/6,
+         aae_object_stats/4,
+         aae_list_buckets/1,
+         aae_list_buckets/2
          ]).
 
 -include("raw_http.hrl").
@@ -90,6 +97,7 @@
 -type modified_range() :: {ts(), ts()} | all.
 -type ts() :: pos_integer().
 -type hash_method() :: pre_hash | {rehash, non_neg_integer()}.
+-type change_method() :: {job, pos_integer()}|local|count.
 
 -type tree_size() :: xxsmall| xsmall| small| medium| large| xlarge.
 
@@ -111,7 +119,7 @@ create(IP, Port, Prefix, Opts0) when is_list(IP), is_integer(Port),
                                      is_list(Prefix), is_list(Opts0) ->
     Opts = case proplists:lookup(client_id, Opts0) of
                none -> [{client_id, random_client_id()}|Opts0];
-               Bin when is_binary(Bin) ->
+               {client_id, Bin} when is_binary(Bin) ->
                    [{client_id, binary_to_list(Bin)}
                     | [ O || O={K,_} <- Opts0, K =/= client_id ]];
                _ ->
@@ -172,6 +180,40 @@ get_server_stats(Rhc) ->
         {error, Error} ->
             {error, Error}
     end.
+
+fetch(Rhc, QueueName) ->
+    QParams = [{object_format, internal}],
+    URL = fetch_url(Rhc, QueueName, QParams),
+    case request(get, URL, ["200"], [], [], Rhc) of
+        {ok, _status, _Headers, Body} ->
+            case Body of
+                <<0:8/integer>> ->
+                    {ok, queue_empty};
+                <<1:8/integer, 1:8/integer,
+                    TCL:32/integer, TombClockBin:TCL/binary,
+                    CRC:32/integer, ObjBin/binary>> ->
+                    {crc_check(CRC, ObjBin),
+                        {deleted, binary_to_term(TombClockBin), ObjBin}};
+                <<1:8/integer, 0:8/integer, CRC:32/integer, ObjBin/binary>> ->
+                    {crc_check(CRC, ObjBin), ObjBin}
+            end;
+        {error, Error} ->
+            {error, Error}
+    end.
+
+fetch_url(Rhc, QueueName, Params) ->
+    binary_to_list(iolist_to_binary([root_url(Rhc),
+                                        "queuename/",
+                                        mochiweb_util:quote_plus(QueueName),
+                                        "?",
+                                        mochiweb_util:urlencode(Params)])).
+
+crc_check(CRC, Bin) ->
+    case erlang:crc32(Bin) of
+        CRC -> ok;
+        _ -> crc_wonky
+    end.
+
 
 %% @equiv get(Rhc, Bucket, Key, [])
 get(Rhc, Bucket, Key) ->
@@ -369,6 +411,39 @@ aae_range_clocks(Rhc, BucketAndType, KeyRange, SegmentFilter, ModifiedRange) ->
             {error, Error}
     end.
 
+%% @doc aae_range_repllkeys
+%% Fold over a range of keys and queue up those keys to be replicated to the
+%% other site.  Once the keys are replicated the objects will then be fetched,
+%% as long as a site is consuming from that replication queue.
+%% Will return the number of keys which have been queued for replication.
+-spec aae_range_replkeys(rhc(), riakc_obj:bucket(),
+                            key_range(), modified_range(),
+                            atom()) ->
+                                {ok, non_neg_integer()} |
+                                    {error, any()}.
+aae_range_replkeys(Rhc, BucketType, KeyRange, ModifiedRange, QueueName) ->
+    {Type, Bucket} = extract_bucket_type(BucketType),
+    Url =
+        lists:flatten(
+          [root_url(Rhc),
+           "rangerepl", "/", %% the AAE-Fold range fold prefix
+           [ [ "types", "/", mochiweb_util:quote_plus(Type), "/"]
+                || Type =/= undefined ],
+           "buckets", "/", mochiweb_util:quote_plus(Bucket), "/",
+           "queuename", "/", mochiweb_util:quote_plus(QueueName),
+           "?filter=",
+            encode_aae_range_filter(KeyRange, all, ModifiedRange, undefined)
+          ]),
+
+    case request(get, Url, ["200"], [], [], Rhc) of
+        {ok, _Status, _Headers, Body} ->
+            {struct, Response} = mochijson2:decode(Body),
+            [{<<"dispatched_count">>, DispatchedCount}] = Response,
+            {ok, DispatchedCount};
+        {error, Error} ->
+            {error, Error}
+    end.
+
 %% @doc aae_find_keys folds over the tictacaae store to get
 %% operational information. `Rhc' is the client. `Bucket' is the
 %% bucket to fold over. `KeyRange' as before is a two tuple of
@@ -407,7 +482,7 @@ aae_find_keys(Rhc, BucketAndType, KeyRange, ModifiedRange, Query) ->
            "buckets", "/", mochiweb_util:quote_plus(Bucket),"/",
            Suffix, "/",
            integer_to_list(element(2, Query)),
-           "?filter=", encode_aae_find_keys_filter(KeyRange, ModifiedRange)
+           "?filter=", encode_aae_find_keys_filter(KeyRange, undefined, ModifiedRange)
           ]),
 
     case request(get, Url, ["200"], [], [], Rhc) of
@@ -418,7 +493,135 @@ aae_find_keys(Rhc, BucketAndType, KeyRange, ModifiedRange, Query) ->
             {error, Error}
     end.
 
-%% @doc aae_find_keys folds over the tictacaae store to get
+%% @doc find_tombs will find tombstone keys in a given bucket and key_range
+%% returning the key and delete_hash, where the delete_hash is an integer that
+%% can be used in a reap request. The SegmentFilter is intended to be used as a
+%% mechanism for assiting in scheduling work - a way for splitting out the
+%% process of finding/reaping tombstones into batches without having
+%% inconsistencies within the AAE trees.
+-spec aae_find_tombs(rhc(),
+                    riakc_obj:bucket(), key_range(),
+                    segment_filter(),
+                    modified_range()) ->
+                        {ok, {keys, list({riakc_obj:key(), pos_integer()})}} |
+                        {error, any()}.
+aae_find_tombs(Rhc, BucketAndType, KeyRange, SegmentFilter, ModifiedRange) ->
+    {Type, Bucket} = extract_bucket_type(BucketAndType),
+    Url =
+        lists:flatten(
+          [root_url(Rhc),
+            "tombs", "/", %% the AAE-Fold range fold prefix
+            [ [ "types", "/", mochiweb_util:quote_plus(Type), "/"] || Type =/= undefined ],
+            "buckets", "/", mochiweb_util:quote_plus(Bucket),"/",
+            "?filter=",
+                encode_aae_find_keys_filter(KeyRange,
+                                                SegmentFilter,
+                                                ModifiedRange)
+          ]),
+
+    case request(get, Url, ["200"], [], [], Rhc) of
+        {ok, _Status, _Headers, Body} ->
+            {struct, Response} = mochijson2:decode(Body),
+            {ok, erlify_aae_find_keys(Response)};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+%% @doc reap_tombs will find tombstone keys in a given bucket and key_range.
+%% The SegmentFilter is intended to be used as a mechanism for assiting in
+%% scheduling work - a way for splitting out the process of finding/reaping
+%% tombstones into batches without having inconsistencies within the AAE trees.
+%% reap_tombs can be passed a change_method of count if a count of matching
+%% tombstones is all that is required - this is an alternative to running
+%% find_tombs and taking the length of the list.  To actually reap either
+%% `local` of `{ob, ID}` should be passed as the change_method.  Using `local`
+%% will reap each tombstone from the node local to which it is discovered,
+%% whch will have the impact of distributing the reap load across the cluster
+%% and increasing parallelisation of reap activity.  Otherwise a job id can be
+%% passed an a specific reaper will be started on the co-ordinating node of the
+%% query only.  The Id will be a positive integer used to identify this reap
+%% task in logs. 
+-spec aae_reap_tombs(rhc(),
+                    riakc_obj:bucket(), key_range(),
+                    segment_filter(),
+                    modified_range(),
+                    change_method()) ->
+                        {ok, non_neg_integer()} | {error, any()}.
+aae_reap_tombs(Rhc,
+                BucketAndType, KeyRange,
+                SegmentFilter, ModifiedRange,
+                ChangeMethod) ->
+    {Type, Bucket} = extract_bucket_type(BucketAndType),
+    Url =
+        lists:flatten(
+          [root_url(Rhc),
+           "reap", "/",
+           [ [ "types", "/", mochiweb_util:quote_plus(Type), "/"] || Type =/= undefined ],
+           "buckets", "/", mochiweb_util:quote_plus(Bucket),"/",
+           "?filter=",
+                encode_aae_action_filter(KeyRange,
+                                            SegmentFilter,
+                                            ModifiedRange,
+                                            ChangeMethod)
+          ]),
+
+    case request(get, Url, ["200"], [], [], Rhc) of
+        {ok, _Status, _Headers, Body} ->
+            {struct, Response} = mochijson2:decode(Body),
+            [{<<"dispatched_count">>, DispatchedCount}] = Response,
+            {ok, DispatchedCount};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+%% @doc erase_keys will find keys in a given bucket and key_range.
+%% The SegmentFilter is intended to be used as a mechanism for assiting in
+%% scheduling work - a way for splitting out the process of finding/reaping
+%% tombstones into batches without having inconsistencies within the AAE trees.
+%% erase_keys can be passed a change_method of count if a count of matching
+%% keys is all that is required - this is an alternative to running
+%% find_keys and taking the length of the list.  To actually erase the object
+%% either `local` of `{ob, ID}` should be passed as the change_method.  Using
+%% `local` will delete each object from the node local to which it is
+%% discovered, which will have the impact of distributing the delete load
+%% across the cluster and increasing parallelisation of delete activity. 
+%% Otherwise a job id can be passed an a specific eraser process will be
+%% started on the co-ordinating node of the query only.  The Id will be a
+%% positive integer used to identify this erase task in logs. 
+-spec aae_erase_keys(rhc(),
+                    riakc_obj:bucket(), key_range(),
+                    segment_filter(),
+                    modified_range(),
+                    change_method()) ->
+                        {ok, non_neg_integer()} | {error, any()}.
+aae_erase_keys(Rhc,
+                BucketAndType, KeyRange,
+                SegmentFilter, ModifiedRange,
+                ChangeMethod) ->
+    {Type, Bucket} = extract_bucket_type(BucketAndType),
+    Url =
+        lists:flatten(
+          [root_url(Rhc),
+           "erase", "/",
+           [ [ "types", "/", mochiweb_util:quote_plus(Type), "/"] || Type =/= undefined ],
+           "buckets", "/", mochiweb_util:quote_plus(Bucket),"/",
+           "?filter=",
+                encode_aae_action_filter(KeyRange,
+                                            SegmentFilter,
+                                            ModifiedRange,
+                                            ChangeMethod)
+          ]),
+
+    case request(get, Url, ["200"], [], [], Rhc) of
+        {ok, _Status, _Headers, Body} ->
+            {struct, Response} = mochijson2:decode(Body),
+            [{<<"dispatched_count">>, DispatchedCount}] = Response,
+            {ok, DispatchedCount};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+%% @doc aae_object_stats folds over the tictacaae store to get
 %% operational information. `Rhc' is the client. `Bucket' is the
 %% bucket to fold over. `KeyRange' as before is a two tuple of
 %% `{Start, End}' where both ` Start' and `End' are binaries that
@@ -448,13 +651,39 @@ aae_object_stats(Rhc, BucketAndType, KeyRange, ModifiedRange) ->
           "objectstats/",
            [ [ "types", "/", mochiweb_util:quote_plus(Type), "/"] || Type =/= undefined ],
            "buckets", "/", mochiweb_util:quote_plus(Bucket),
-           "?filter=", encode_aae_find_keys_filter(KeyRange, ModifiedRange)
+           "?filter=", encode_aae_find_keys_filter(KeyRange, undefined, ModifiedRange)
           ]),
 
     case request(get, Url, ["200"], [], [], Rhc) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {ok, {stats, erlify_aae_object_stats(Response)}};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+%% @doc
+%% List all the buckets with references in the AAE store.  For reasonable 
+%% (e.g. < o(1000)) this should be quick and efficient unless using the
+%% leveled_so parallel store.  A minimum n_val can be passed if known.  If
+%% there are buckets (with keys) below the minimum n_val they may not be
+%% detecting in the query.  Will default to 1.
+-spec aae_list_buckets(rhc()) -> {ok, list(riakc_obj:bucket())}.
+aae_list_buckets(Rhc) ->
+    Url = lists:flatten([root_url(Rhc), "aaebucketlist"]),
+    aae_list_buckets(Rhc, Url).
+
+-spec aae_list_buckets(rhc(), pos_integer()|string())
+                                            -> {ok, list(riakc_obj:bucket())}.
+aae_list_buckets(Rhc, MinNVal) when is_integer(MinNVal), MinNVal > 0 ->
+    Url = lists:flatten([root_url(Rhc), "aaebucketlist",
+                            "?filter=", integer_to_list(MinNVal)]),
+    aae_list_buckets(Rhc, Url);
+aae_list_buckets(Rhc, Url) when is_list(Url) ->
+    case request(get, Url, ["200"], [], [], Rhc) of
+        {ok, _Status, _Headers, Body} ->
+            {struct, [{<<"results">>, Response}]} = mochijson2:decode(Body),
+            {ok, erlify_aae_buckets(Response)};
         {error, Error} ->
             {error, Error}
     end.
@@ -1142,12 +1371,15 @@ encode_aae_cached_filter(Filter) ->
     JSON = mochijson2:encode(Filter),
     base64:encode_to_string(lists:flatten(JSON)).
 
--spec encode_aae_find_keys_filter(key_range(), modified_range()) ->
-                                         string().
-encode_aae_find_keys_filter(KeyRange, ModifiedRange) ->
+-spec encode_aae_find_keys_filter(key_range(),
+                                    segment_filter() | undefined,
+                                    modified_range()) ->
+                                        string().
+encode_aae_find_keys_filter(KeyRange, SegmentFilter, ModifiedRange) ->
     FilterElems = [EncodeFun(FilterElem) || {EncodeFun, FilterElem} <-
-                                  [{fun encode_key_range/1, KeyRange},
-                                   {fun encode_modified_range/1, ModifiedRange}]
+                                [{fun encode_key_range/1, KeyRange},
+                                    {fun encode_segment_filter/1, SegmentFilter},
+                                    {fun encode_modified_range/1, ModifiedRange}]
                   ],
     JSON = mochijson2:encode({struct, lists:flatten(FilterElems)}),
     base64:encode_to_string(iolist_to_binary(JSON)).
@@ -1164,6 +1396,21 @@ encode_aae_range_filter(KeyRange, SegmentFilter, ModifiedRange, HashMethod) ->
     JSON = mochijson2:encode({struct, lists:flatten(FilterElems)}),
     base64:encode_to_string(iolist_to_binary(JSON)).
 
+-spec encode_aae_action_filter(key_range(),
+                                segment_filter(),
+                                modified_range(), 
+                                change_method()) ->
+                                     string().
+encode_aae_action_filter(KeyRange, SegmentFilter, ModifiedRange, ChangeMethod) ->
+    FilterElems = [EncodeFun(FilterElem) || {EncodeFun, FilterElem} <-
+                                  [{fun encode_key_range/1, KeyRange},
+                                   {fun encode_segment_filter/1, SegmentFilter},
+                                   {fun encode_modified_range/1, ModifiedRange},
+                                   {fun encode_change_method/1, ChangeMethod}]],
+    JSON = mochijson2:encode({struct, lists:flatten(FilterElems)}),
+    base64:encode_to_string(iolist_to_binary(JSON)).
+
+
 -spec encode_key_range(all | {binary(), binary()}) ->
                               [] | {binary(), {struct, list()}}.
 encode_key_range(all) ->
@@ -1175,6 +1422,8 @@ encode_key_range({Start, End}) when is_binary(Start), is_binary(End) ->
 -spec encode_segment_filter(all | {list(pos_integer()), tree_size()}) ->
                                    [] | {binary(), {struct, list()}}.
 encode_segment_filter(all) ->
+    [];
+encode_segment_filter(undefined) ->
     [];
 encode_segment_filter({SegList, TreeSize}) when is_list(SegList), is_atom(TreeSize) ->
     {<<"segment_filter">>, {struct, [{<<"segments">>, SegList},
@@ -1194,6 +1443,18 @@ encode_hash_method({rehash, IV}) when is_integer(IV) ->
     {<<"hash_iv">>, IV};
 encode_hash_method(_) ->
     [].
+
+-spec encode_change_method(undefined | change_method()) ->
+                    [] | {binary(), binary()} | {binary(), {struct, list()}}.
+encode_change_method(count) ->
+    {<<"change_method">>, <<"count">>};
+encode_change_method(local) ->
+    {<<"change_method">>, <<"local">>};
+encode_change_method({job, JobID}) ->
+    {<<"change_method">>, {struct, [{<<"job_id">>, JobID}]}};
+encode_change_method(_) ->
+    [].
+
 
 %% @doc Generate a counter url.
 -spec make_counter_url(rhc(), term(), term(), list()) -> iolist().
@@ -1381,6 +1642,22 @@ erlify_aae_keyclock({struct, Props}) ->
                 {Type, Bucket}
         end,
     {{BucketAndType, Key}, base64:decode(Clock)}.
+
+
+-spec erlify_aae_buckets(list()) -> list(riakc_obj:bucket()).
+erlify_aae_buckets(BucketList) ->
+    lists:map(fun erlify_aae_bucket/1, BucketList).
+
+-spec erlify_aae_bucket({struct, proplists:proplist()}) -> riakc_obj:bucket().
+erlify_aae_bucket({struct, BucketProps}) ->
+    BType = proplists:get_value(<<"bucket-type">>, BucketProps, <<"default">>),
+    Bucket = proplists:get_value(<<"bucket">>, BucketProps),
+    case BType of
+        <<"default">> ->
+            Bucket;
+        Type when is_binary(Type) ->
+            {Type, Bucket}
+    end.
 
 %% @doc Convert a stats-resource response to an erlang-term server
 %%      information proplist.
