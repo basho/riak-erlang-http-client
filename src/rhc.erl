@@ -797,6 +797,8 @@ counter_val(Rhc, Bucket, Key) ->
 %%          <dd>if `true' not_found replies from vnodes count toward read quorum.</dd>
 %%        <dt>`basic_quorum'</dt>
 %%          <dd>When set to `true' riak will return a value as soon as it gets a quorum of responses.</dd>
+%%        <dt>`node_confirms'</dt>
+%%          <dd>The number of separate nodes which host vnodes that need to be consulted as part of the fetch.</dd>
 %%      </dl>
 %% See the riak docs at http://docs.basho.com/riak/latest/references/apis/http/ for details
 -spec counter_val(rhc(), term(), term(), list()) -> {ok, integer()} | {error, term()}.
@@ -1535,7 +1537,7 @@ delete_q_params(Rhc, Options) ->
     options_list([r,w,dw,pr,pw,rw,timeout], Options ++ options(Rhc)).
 
 fetch_type_q_params(Rhc, Options) ->
-    options_list([r,pr,basic_quorum,notfound_ok,timeout,include_context], Options ++ options(Rhc)).
+    options_list([r,pr,basic_quorum,node_confirms,notfound_ok,timeout,include_context], Options ++ options(Rhc)).
 
 update_type_q_params(Rhc, Options) ->
     options_list([r,w,dw,pr,pw,basic_quorum, node_confirms,
