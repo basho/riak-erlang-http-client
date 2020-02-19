@@ -1517,7 +1517,7 @@ options(#rhc{options=Options}) ->
 %% @doc Extract the list of query parameters to use for a GET
 %% @spec get_q_params(rhc(), proplist()) -> proplist()
 get_q_params(Rhc, Options) ->
-    options_list([r,pr,timeout], Options ++ options(Rhc)).
+    options_list([r,pr,notfound_ok,node_confirms,timeout], Options ++ options(Rhc)).
 
 %% @doc Extract the list of query parameters to use for a PUT
 %% @spec put_q_params(rhc(), proplist()) -> proplist()
