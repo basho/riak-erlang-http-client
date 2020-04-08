@@ -135,15 +135,15 @@ stream_parts_acceptor(Pid, PidRef, {{_Name, _Param, Part},Next}) ->
 %% @private
 maybe_send_results(_Pid, _PidRef, undefined, undefined) -> ok;
 maybe_send_results(Pid, PidRef, Keys, Results) ->
-    Pid ! {PidRef, ?INDEX_STREAM_RESULT{keys=Keys, terms=Results}}.
+    Pid ! {PidRef, ?INDEX_STREAM_RESULT{keys=Keys,
+                                        terms=Results}}.
 
 %% @doc Sends the continuation to Pid if it is present in the result,
 %% otherwise sends nothing.
 %% @private
-maybe_send_continuation(_Pid, _PidRef, undefined) ->
-    ok;
+maybe_send_continuation(_Pid, _PidRef, undefined) -> ok;
 maybe_send_continuation(Pid, PidRef, Continuation) ->
-    Pid ! {PidRef, {done, Continuation}}.
+            Pid ! {PidRef, {done, Continuation}}.
 
 %% @doc "next" fun for the webmachine_multipart streamer - waits for
 %%      an ibrowse message, and then returns it to the streamer for processing

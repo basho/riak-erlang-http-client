@@ -8,5 +8,3 @@ doc/erlang.png
 doc/stylesheet.css
 _build/
 rebar.lock
-.eunit/*
-.local_dialyzer_plt
