@@ -69,6 +69,7 @@
          aae_merge_root/2,
          aae_merge_branches/3,
          aae_fetch_clocks/3,
+         aae_fetch_clocks/4,
          aae_range_tree/7,
          aae_range_clocks/5,
          aae_range_replkeys/5,
@@ -325,8 +326,8 @@ aae_merge_branches(Rhc, NVal, Branches) ->
             {error, Error}
     end.
 
-%% @doc get the aae merged branches for the given `NVal', restricted
-%% to the given list of `Branches'
+%% @doc fetch the keys and clocks for the given `NVal', restricted
+%% to the given list of `Segments'
 -spec aae_fetch_clocks(rhc(),
                        NVal::pos_integer(),
                        Segments::list(pos_integer())) ->
@@ -335,6 +336,25 @@ aae_merge_branches(Rhc, NVal, Branches) ->
 aae_fetch_clocks(Rhc, NVal, Segments) ->
     Url = make_cached_aae_url(Rhc, keysclocks, NVal, Segments),
 
+    case request(get, Url, ["200"], [], [], Rhc) of
+        {ok, _Status, _Headers, Body} ->
+            {struct, Response} = mochijson2:decode(Body),
+            {ok, erlify_aae_keysclocks(Response)};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+%% @doc fetch the keys and clocks for the given `NVal', restricted
+%% to the given list of `Segments' and by a modified range
+-spec aae_fetch_clocks(rhc(),
+                       NVal::pos_integer(),
+                       Segments::list(pos_integer()),
+                       ModifiedRange::modified_range()) ->
+                              {ok, {keysclocks, [{{riakc_obj:bucket(), riakc_obj:key()}, binary()}]}} |
+                              {error, any()}.
+aae_fetch_clocks(Rhc, NVal, Segments, ModifiedRange) ->
+    Url =
+        make_cached_aae_url(Rhc, keysclocks, NVal, {Segments, ModifiedRange}),
     case request(get, Url, ["200"], [], [], Rhc) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
@@ -1355,17 +1375,32 @@ make_rtenqueue_url(Rhc=#rhc{}, BucketAndType, Key, Query) ->
 -spec make_cached_aae_url(rhc(),
                           root | branch | keysclocks,
                           NVal :: pos_integer(),
-                          Filter :: proplists:proplist()|undefined) ->
+                          IDs :: list(non_neg_integer())|
+                                    undefined|
+                                    {list(non_neg_integer()),
+                                        modified_range()}) ->
                                  iolist().
-make_cached_aae_url(Rhc, Type, NVal, Filter) ->
+make_cached_aae_url(Rhc, Type, NVal, undefined) ->
+    complete_cached_aae_url(Rhc, NVal, Type, []);
+make_cached_aae_url(Rhc, Type, NVal, IDs) when is_list(IDs) ->
+    Filter = ["?filter=", encode_aae_cached_filter(IDs)],
+    complete_cached_aae_url(Rhc, NVal, Type, Filter);
+make_cached_aae_url(Rhc, Type, NVal, {IDs, ModifiedRange}) ->
+    Filter = ["?filter=", encode_aae_cached_filter(IDs, ModifiedRange)],
+    complete_cached_aae_url(Rhc, NVal, Type, Filter).
+
+
+complete_cached_aae_url(Rhc, NVal, Type, Filter) ->
     lists:flatten(
       [root_url(Rhc),
        "cachedtrees", "/", %% the AAE-Fold cachedtrees prefix
        "nvals", "/",
        integer_to_list(NVal), "/",
        atom_to_list(Type),
-       [ ["?filter=", encode_aae_cached_filter(Filter)] || Filter =/= undefined]
+       Filter
       ]).
+
+
 
 %% @doc this is a list of integers. Segment IDs or Branches, but
 %% either way, just json encode a list of ints
@@ -1373,6 +1408,17 @@ make_cached_aae_url(Rhc, Type, NVal, Filter) ->
 encode_aae_cached_filter(Filter) ->
     JSON = mochijson2:encode(Filter),
     base64:encode_to_string(lists:flatten(JSON)).
+
+-spec encode_aae_cached_filter(list(pos_integer()),
+                                modified_range()) -> string().
+encode_aae_cached_filter(SegmentIDs, ModifiedRange) ->
+    FilterElems = [EncodeFun(FilterElem) || {EncodeFun, FilterElem} <-
+                                  [{fun encode_segment_filter/1,
+                                      {SegmentIDs, large}},
+                                   {fun encode_modified_range/1,
+                                       ModifiedRange}]],
+    JSON = mochijson2:encode({struct, lists:flatten(FilterElems)}),
+    base64:encode_to_string(iolist_to_binary(JSON)).
 
 -spec encode_aae_find_keys_filter(key_range(),
                                     segment_filter() | undefined,
