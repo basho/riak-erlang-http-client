@@ -300,7 +300,7 @@ rt_enqueue(Rhc, Bucket, Key, Options) ->
 aae_merge_root(Rhc, NVal) ->
     Url = make_cached_aae_url(Rhc, root, NVal, undefined),
 
-    case request(get, Url, ["200"], [], [], Rhc) of
+    case request(get, Url, ["200"], [], [], Rhc, ?AAEFOLD_TIMEOUT) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {ok, erlify_aae_root(Response)};
@@ -318,7 +318,7 @@ aae_merge_root(Rhc, NVal) ->
 aae_merge_branches(Rhc, NVal, Branches) ->
     Url = make_cached_aae_url(Rhc, branch, NVal, Branches),
 
-    case request(get, Url, ["200"], [], [], Rhc) of
+    case request(get, Url, ["200"], [], [], Rhc, ?AAEFOLD_TIMEOUT) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {ok, erlify_aae_branches(Response)};
@@ -336,7 +336,7 @@ aae_merge_branches(Rhc, NVal, Branches) ->
 aae_fetch_clocks(Rhc, NVal, Segments) ->
     Url = make_cached_aae_url(Rhc, keysclocks, NVal, Segments),
 
-    case request(get, Url, ["200"], [], [], Rhc) of
+    case request(get, Url, ["200"], [], [], Rhc, ?AAEFOLD_TIMEOUT) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {ok, erlify_aae_keysclocks(Response)};
@@ -355,7 +355,7 @@ aae_fetch_clocks(Rhc, NVal, Segments) ->
 aae_fetch_clocks(Rhc, NVal, Segments, ModifiedRange) ->
     Url =
         make_cached_aae_url(Rhc, keysclocks, NVal, {Segments, ModifiedRange}),
-    case request(get, Url, ["200"], [], [], Rhc) of
+    case request(get, Url, ["200"], [], [], Rhc, ?AAEFOLD_TIMEOUT) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {ok, erlify_aae_keysclocks(Response)};
@@ -401,7 +401,7 @@ aae_range_tree(Rhc, BucketAndType, KeyRange,
            "?filter=", encode_aae_range_filter(KeyRange, SegmentFilter, ModifiedRange, HashMethod)
           ]),
 
-    case request(get, Url, ["200"], [], [], Rhc) of
+    case request(get, Url, ["200"], [], [], Rhc, ?AAEFOLD_TIMEOUT) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {ok, erlify_aae_tree(Response)};
@@ -424,7 +424,7 @@ aae_range_clocks(Rhc, BucketAndType, KeyRange, SegmentFilter, ModifiedRange) ->
            "?filter=", encode_aae_range_filter(KeyRange, SegmentFilter, ModifiedRange, undefined)
           ]),
 
-    case request(get, Url, ["200"], [], [], Rhc) of
+    case request(get, Url, ["200"], [], [], Rhc, ?AAEFOLD_TIMEOUT) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {ok, erlify_aae_keysclocks(Response)};
@@ -456,7 +456,7 @@ aae_range_replkeys(Rhc, BucketType, KeyRange, ModifiedRange, QueueName) ->
             encode_aae_range_filter(KeyRange, all, ModifiedRange, undefined)
           ]),
 
-    case request(get, Url, ["200"], [], [], Rhc) of
+    case request(get, Url, ["200"], [], [], Rhc, ?AAEFOLD_TIMEOUT) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             [{<<"dispatched_count">>, DispatchedCount}] = Response,
@@ -506,7 +506,7 @@ aae_find_keys(Rhc, BucketAndType, KeyRange, ModifiedRange, Query) ->
            "?filter=", encode_aae_find_keys_filter(KeyRange, undefined, ModifiedRange)
           ]),
 
-    case request(get, Url, ["200"], [], [], Rhc) of
+    case request(get, Url, ["200"], [], [], Rhc, ?AAEFOLD_TIMEOUT) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {ok, erlify_aae_find_keys(Response)};
@@ -540,7 +540,7 @@ aae_find_tombs(Rhc, BucketAndType, KeyRange, SegmentFilter, ModifiedRange) ->
                                                 ModifiedRange)
           ]),
 
-    case request(get, Url, ["200"], [], [], Rhc) of
+    case request(get, Url, ["200"], [], [], Rhc, ?AAEFOLD_TIMEOUT) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {ok, erlify_aae_find_keys(Response)};
@@ -586,7 +586,7 @@ aae_reap_tombs(Rhc,
                                             ChangeMethod)
           ]),
 
-    case request(get, Url, ["200"], [], [], Rhc) of
+    case request(get, Url, ["200"], [], [], Rhc, ?AAEFOLD_TIMEOUT) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             [{<<"dispatched_count">>, DispatchedCount}] = Response,
@@ -633,7 +633,7 @@ aae_erase_keys(Rhc,
                                             ChangeMethod)
           ]),
 
-    case request(get, Url, ["200"], [], [], Rhc) of
+    case request(get, Url, ["200"], [], [], Rhc, ?AAEFOLD_TIMEOUT) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             [{<<"dispatched_count">>, DispatchedCount}] = Response,
@@ -675,7 +675,7 @@ aae_object_stats(Rhc, BucketAndType, KeyRange, ModifiedRange) ->
            "?filter=", encode_aae_find_keys_filter(KeyRange, undefined, ModifiedRange)
           ]),
 
-    case request(get, Url, ["200"], [], [], Rhc) of
+    case request(get, Url, ["200"], [], [], Rhc, ?AAEFOLD_TIMEOUT) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
             {ok, {stats, erlify_aae_object_stats(Response)}};
@@ -701,7 +701,7 @@ aae_list_buckets(Rhc, MinNVal) when is_integer(MinNVal), MinNVal > 0 ->
                             "?filter=", integer_to_list(MinNVal)]),
     aae_list_buckets(Rhc, Url);
 aae_list_buckets(Rhc, Url) when is_list(Url) ->
-    case request(get, Url, ["200"], [], [], Rhc) of
+    case request(get, Url, ["200"], [], [], Rhc, ?AAEFOLD_TIMEOUT) of
         {ok, _Status, _Headers, Body} ->
             {struct, [{<<"results">>, Response}]} = mochijson2:decode(Body),
             {ok, erlify_aae_buckets(Response)};
@@ -1529,11 +1529,15 @@ make_datatype_url(Rhc, BucketAndType, Key, Query) ->
 
 %% @doc send an ibrowse request
 request(Method, Url, Expect, Headers, Body, Rhc) ->
+    request(Method, Url, Expect, Headers, Body, Rhc, ?DEFAULT_TIMEOUT).
+
+request(Method, Url, Expect, Headers, Body, Rhc, Timeout) ->
     AuthHeader = get_auth_header(Rhc#rhc.options),
     SSLOptions = get_ssl_options(Rhc#rhc.options),
     Accept = {"Accept", "multipart/mixed, */*;q=0.9"},
     case ibrowse:send_req(Url, [Accept|Headers] ++ AuthHeader, Method, Body,
-                          [{response_format, binary}] ++ SSLOptions) of
+                          [{response_format, binary}] ++ SSLOptions,
+                          Timeout) of
         Resp={ok, Status, _, _} ->
             case lists:member(Status, Expect) of
                 true -> Resp;
