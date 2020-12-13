@@ -21,6 +21,7 @@
 %% -------------------------------------------------------------------
 
 -define(DEFAULT_TIMEOUT, 60000).
+-define(AAEFOLD_TIMEOUT, 3600000).
 
 -record(rhc, {ip,
               port,
