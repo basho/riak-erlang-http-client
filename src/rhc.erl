@@ -273,7 +273,7 @@ push_url(Rhc, QueueName) ->
     binary_to_list(
         iolist_to_binary(
             [root_url(Rhc),
-                "/queuename",
+                "queuename/",
                 mochiweb_util:quote_plus(QueueName)])).
 
 -spec encode_keys_and_clocks([{riakc_obj:bucket(), riakc_obj:key(), riakc_obj:vclock()}]) -> iolist().
