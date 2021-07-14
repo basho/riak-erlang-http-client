@@ -35,7 +35,7 @@
          get_server_info/1,
          get_server_stats/1,
          get/3, get/4,
-         fetch/2, fetch/3,
+         fetch/2, fetch/3, push/3,
          put/2, put/3,
          delete/3, delete/4, delete_obj/2, delete_obj/3,
          list_buckets/1,
@@ -246,12 +246,52 @@ fetch(Rhc, QueueName, internal_aaehash) ->
             {error, Error}
     end.
 
+-spec push(rhc(),
+            binary(),
+            [{riakc_obj:bucket(), riakc_obj:key(), riakc_obj:vclock()}]) ->
+                {error, term()}|{ok, iolist()}.
+push(Rhc, QueueName, KeyClockList) ->
+    URL = push_url(Rhc, QueueName),
+    Headers = [{"content-type", "application/json"}],
+    Body = encode_keys_and_clocks(KeyClockList),
+    case request(post, URL, ["200"], Headers, Body, Rhc) of
+        {ok, _Status, _headers, Body} ->
+            {ok, Body};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+
 fetch_url(Rhc, QueueName, Params) ->
     binary_to_list(iolist_to_binary([root_url(Rhc),
                                         "queuename/",
                                         mochiweb_util:quote_plus(QueueName),
                                         "?",
                                         mochiweb_util:urlencode(Params)])).
+
+push_url(Rhc, QueueName) ->
+    binary_to_list(
+        iolist_to_binary(
+            [root_url(Rhc),
+                "/queuename",
+                mochiweb_util:quote_plus(QueueName)])).
+
+-spec encode_keys_and_clocks([{riakc_obj:bucket(), riakc_obj:key(), riakc_obj:vclock()}]) -> iolist().
+encode_keys_and_clocks(KeysNClocks) ->
+    Keys = {struct, [{<<"keys-clocks">>,
+                      [{struct, encode_key_and_clock(Bucket, Key, Clock)} || {Bucket, Key, Clock} <- KeysNClocks]
+                     }]},
+    mochijson2:encode(Keys).
+
+encode_key_and_clock({Type, Bucket}, Key, Clock) ->
+    [{<<"bucket-type">>, Type},
+     {<<"bucket">>, Bucket},
+     {<<"key">>, Key},
+     {<<"clock">>, Clock}];
+encode_key_and_clock(Bucket, Key, Clock) ->
+    [{<<"bucket">>, Bucket},
+     {<<"key">>, Key},
+     {<<"clock">>, Clock}].
 
 crc_check(CRC, Bin) ->
     case erlang:crc32(Bin) of
