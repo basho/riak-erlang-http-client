@@ -184,15 +184,16 @@ get_server_stats(Rhc) ->
     end.
 
 %% @doc Fetch replicated objects from a queue
--spec fetch(pid(), binary()) ->
+-spec fetch(rhc(), binary()) ->
                 {ok, queue_empty}|
+                {error, term()}|
                 {ok|crc_wonky,
                     {deleted, term(), binary()}|binary()}.
 fetch(Rhc, QueueName) ->
     QParams = [{object_format, internal}],
     URL = fetch_url(Rhc, QueueName, QParams),
     case request(get, URL, ["200"], [], [], Rhc) of
-        {ok, _status, _Headers, Body} ->
+        {ok, _Status, _Headers, Body} ->
             case Body of
                 <<0:8/integer>> ->
                     {ok, queue_empty};
@@ -208,8 +209,9 @@ fetch(Rhc, QueueName) ->
             {error, Error}
     end.
 
--spec fetch(pid(), binary(), internal|internal_aaehash) ->
+-spec fetch(rhc(), binary(), internal|internal_aaehash) ->
                 {ok, queue_empty}|
+                {error, term()}|
                 {ok|crc_wonky,
                     {deleted, term(), binary()}|
                         binary()|
@@ -221,17 +223,24 @@ fetch(Rhc, QueueName, internal_aaehash) ->
     QParams = [{object_format, internal_aaehash}],
     URL = fetch_url(Rhc, QueueName, QParams),
     case request(get, URL, ["200"], [], [], Rhc) of
-        {ok, _status, _Headers, Body} ->
+        {ok, _Status, _Headers, Body} ->
             case Body of
                 <<0:8/integer>> ->
                     {ok, queue_empty};
                 <<1:8/integer, 1:8/integer,
+                    SegmentID:32/integer, SegmentHash:32/integer,
                     TCL:32/integer, TombClockBin:TCL/binary,
                     CRC:32/integer, ObjBin/binary>> ->
                     {crc_check(CRC, ObjBin),
-                        {deleted, binary_to_term(TombClockBin), ObjBin}};
-                <<1:8/integer, 0:8/integer, CRC:32/integer, ObjBin/binary>> ->
-                    {crc_check(CRC, ObjBin), ObjBin}
+                        {deleted,
+                            binary_to_term(TombClockBin),
+                            ObjBin,
+                            SegmentID, SegmentHash}};
+                <<1:8/integer, 0:8/integer,
+                    SegmentID:32/integer, SegmentHash:32/integer,
+                    CRC:32/integer, ObjBin/binary>> ->
+                    {crc_check(CRC, ObjBin),
+                        {ObjBin, SegmentID, SegmentHash}}
             end;
         {error, Error} ->
             {error, Error}
