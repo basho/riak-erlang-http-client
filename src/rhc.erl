@@ -35,7 +35,7 @@
          get_server_info/1,
          get_server_stats/1,
          get/3, get/4,
-         fetch/2,
+         fetch/2, fetch/3,
          put/2, put/3,
          delete/3, delete/4, delete_obj/2, delete_obj/3,
          list_buckets/1,
@@ -183,8 +183,42 @@ get_server_stats(Rhc) ->
             {error, Error}
     end.
 
+%% @doc Fetch replicated objects from a queue
+-spec fetch(pid(), binary()) ->
+                {ok, queue_empty}|
+                {ok|crc_wonky,
+                    {deleted, term(), binary()}|binary()}.
 fetch(Rhc, QueueName) ->
     QParams = [{object_format, internal}],
+    URL = fetch_url(Rhc, QueueName, QParams),
+    case request(get, URL, ["200"], [], [], Rhc) of
+        {ok, _status, _Headers, Body} ->
+            case Body of
+                <<0:8/integer>> ->
+                    {ok, queue_empty};
+                <<1:8/integer, 1:8/integer,
+                    TCL:32/integer, TombClockBin:TCL/binary,
+                    CRC:32/integer, ObjBin/binary>> ->
+                    {crc_check(CRC, ObjBin),
+                        {deleted, binary_to_term(TombClockBin), ObjBin}};
+                <<1:8/integer, 0:8/integer, CRC:32/integer, ObjBin/binary>> ->
+                    {crc_check(CRC, ObjBin), ObjBin}
+            end;
+        {error, Error} ->
+            {error, Error}
+    end.
+
+-spec fetch(pid(), binary(), internal|internal_aaehash) ->
+                {ok, queue_empty}|
+                {ok|crc_wonky,
+                    {deleted, term(), binary()}|
+                        binary()|
+                        {deleted, term(), binary(), non_neg_integer(), non_neg_integer()}|
+                        {binary(), non_neg_integer(), non_neg_integer()}}.
+fetch(Rhc, QueueName, internal) ->
+    fetch(Rhc, QueueName);
+fetch(Rhc, QueueName, internal_aaehash) ->
+    QParams = [{object_format, internal_aaehash}],
     URL = fetch_url(Rhc, QueueName, QParams),
     case request(get, URL, ["200"], [], [], Rhc) of
         {ok, _status, _Headers, Body} ->
