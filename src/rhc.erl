@@ -252,11 +252,11 @@ fetch(Rhc, QueueName, internal_aaehash) ->
                 {error, term()}|{ok, iolist()}.
 push(Rhc, QueueName, KeyClockList) ->
     URL = push_url(Rhc, QueueName),
-    Headers = [{"content-type", "application/json"}],
-    Body = encode_keys_and_clocks(KeyClockList),
-    case request(post, URL, ["200"], Headers, Body, Rhc) of
-        {ok, _Status, _headers, Body} ->
-            {ok, Body};
+    ReqHeaders = [{"content-type", "application/json"}],
+    ReqBody = encode_keys_and_clocks(KeyClockList),
+    case request(post, URL, ["200"], ReqHeaders, ReqBody, Rhc) of
+        {ok, "200", _RspHeaders, RspBody} ->
+            {ok, RspBody};
         {error, Error} ->
             {error, Error}
     end.
