@@ -35,7 +35,7 @@
          get_server_info/1,
          get_server_stats/1,
          get/3, get/4,
-         fetch/2,
+         fetch/2, fetch/3, push/3,
          put/2, put/3,
          delete/3, delete/4, delete_obj/2, delete_obj/3,
          list_buckets/1,
@@ -183,11 +183,17 @@ get_server_stats(Rhc) ->
             {error, Error}
     end.
 
+%% @doc Fetch replicated objects from a queue
+-spec fetch(rhc(), binary()) ->
+                {ok, queue_empty}|
+                {error, term()}|
+                {ok|crc_wonky,
+                    {deleted, term(), binary()}|binary()}.
 fetch(Rhc, QueueName) ->
     QParams = [{object_format, internal}],
     URL = fetch_url(Rhc, QueueName, QParams),
     case request(get, URL, ["200"], [], [], Rhc) of
-        {ok, _status, _Headers, Body} ->
+        {ok, _Status, _Headers, Body} ->
             case Body of
                 <<0:8/integer>> ->
                     {ok, queue_empty};
@@ -203,12 +209,89 @@ fetch(Rhc, QueueName) ->
             {error, Error}
     end.
 
+-spec fetch(rhc(), binary(), internal|internal_aaehash) ->
+                {ok, queue_empty}|
+                {error, term()}|
+                {ok|crc_wonky,
+                    {deleted, term(), binary()}|
+                        binary()|
+                        {deleted, term(), binary(), non_neg_integer(), non_neg_integer()}|
+                        {binary(), non_neg_integer(), non_neg_integer()}}.
+fetch(Rhc, QueueName, internal) ->
+    fetch(Rhc, QueueName);
+fetch(Rhc, QueueName, internal_aaehash) ->
+    QParams = [{object_format, internal_aaehash}],
+    URL = fetch_url(Rhc, QueueName, QParams),
+    case request(get, URL, ["200"], [], [], Rhc) of
+        {ok, _Status, _Headers, Body} ->
+            case Body of
+                <<0:8/integer>> ->
+                    {ok, queue_empty};
+                <<1:8/integer, 1:8/integer,
+                    SegmentID:32/integer, SegmentHash:32/integer,
+                    TCL:32/integer, TombClockBin:TCL/binary,
+                    CRC:32/integer, ObjBin/binary>> ->
+                    {crc_check(CRC, ObjBin),
+                        {deleted,
+                            binary_to_term(TombClockBin),
+                            ObjBin,
+                            SegmentID, SegmentHash}};
+                <<1:8/integer, 0:8/integer,
+                    SegmentID:32/integer, SegmentHash:32/integer,
+                    CRC:32/integer, ObjBin/binary>> ->
+                    {crc_check(CRC, ObjBin),
+                        {ObjBin, SegmentID, SegmentHash}}
+            end;
+        {error, Error} ->
+            {error, Error}
+    end.
+
+-spec push(rhc(),
+            binary(),
+            [{riakc_obj:bucket(), riakc_obj:key(), riakc_obj:vclock()}]) ->
+                {error, term()}|{ok, iolist()}.
+push(Rhc, QueueName, KeyClockList) ->
+    URL = push_url(Rhc, QueueName),
+    ReqHeaders = [{"content-type", "application/json"}],
+    ReqBody = encode_keys_and_clocks(KeyClockList),
+    case request(post, URL, ["200"], ReqHeaders, ReqBody, Rhc) of
+        {ok, "200", _RspHeaders, RspBody} ->
+            {ok, RspBody};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+
 fetch_url(Rhc, QueueName, Params) ->
     binary_to_list(iolist_to_binary([root_url(Rhc),
                                         "queuename/",
                                         mochiweb_util:quote_plus(QueueName),
                                         "?",
                                         mochiweb_util:urlencode(Params)])).
+
+push_url(Rhc, QueueName) ->
+    binary_to_list(
+        iolist_to_binary(
+            [root_url(Rhc),
+                "queuename/",
+                mochiweb_util:quote_plus(QueueName)])).
+
+-spec encode_keys_and_clocks([{riakc_obj:bucket(), riakc_obj:key(), riakc_obj:vclock()}]) -> iolist().
+encode_keys_and_clocks(KeysNClocks) ->
+    Keys = {struct, [{<<"keys-clocks">>,
+                      [{struct, encode_key_and_clock(Bucket, Key, Clock)} || {Bucket, Key, Clock} <- KeysNClocks]
+                     }]},
+    mochijson2:encode(Keys).
+
+encode_key_and_clock({Type, Bucket}, Key, Clock) ->
+    [{<<"bucket-type">>, Type},
+     {<<"bucket">>, Bucket},
+     {<<"key">>, Key},
+     {<<"clock">>, Clock}];
+encode_key_and_clock(Bucket, Key, Clock) ->
+    [{<<"bucket">>, Bucket},
+     {<<"key">>, Key},
+     {<<"clock">>, Clock}].
 
 crc_check(CRC, Bin) ->
     case erlang:crc32(Bin) of
