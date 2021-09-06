@@ -73,6 +73,7 @@
          aae_range_tree/7,
          aae_range_clocks/5,
          aae_range_replkeys/5,
+         aae_range_repairkeys/4,
          aae_find_keys/5,
          aae_find_tombs/5,
          aae_reap_tombs/6,
@@ -535,6 +536,35 @@ aae_range_replkeys(Rhc, BucketType, KeyRange, ModifiedRange, QueueName) ->
                 || Type =/= undefined ],
            "buckets", "/", mochiweb_util:quote_plus(Bucket), "/",
            "queuename", "/", mochiweb_util:quote_plus(QueueName),
+           "?filter=",
+            encode_aae_range_filter(KeyRange, all, ModifiedRange, undefined)
+          ]),
+
+    case request(get, Url, ["200"], [], [], Rhc, ?AAEFOLD_TIMEOUT) of
+        {ok, _Status, _Headers, Body} ->
+            {struct, Response} = mochijson2:decode(Body),
+            [{<<"dispatched_count">>, DispatchedCount}] = Response,
+            {ok, DispatchedCount};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+%% @doc aae_range_repairkeys
+%% Fold over a range of keys and in batches prompt read repair of each key
+%% by fetching the key
+-spec aae_range_repairkeys(rhc(), riakc_obj:bucket(),
+                            key_range(), modified_range()) ->
+                                {ok, non_neg_integer()} |
+                                    {error, any()}.
+aae_range_repairkeys(Rhc, BucketType, KeyRange, ModifiedRange) ->
+    {Type, Bucket} = extract_bucket_type(BucketType),
+    Url =
+        lists:flatten(
+          [root_url(Rhc),
+           "rangerepl", "/", %% the AAE-Fold range fold prefix
+           [ [ "types", "/", mochiweb_util:quote_plus(Type), "/"]
+                || Type =/= undefined ],
+           "buckets", "/", mochiweb_util:quote_plus(Bucket),
            "?filter=",
             encode_aae_range_filter(KeyRange, all, ModifiedRange, undefined)
           ]),
