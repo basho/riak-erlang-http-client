@@ -561,7 +561,7 @@ aae_range_repairkeys(Rhc, BucketType, KeyRange, ModifiedRange) ->
     Url =
         lists:flatten(
           [root_url(Rhc),
-           "rangerepl", "/", %% the AAE-Fold range fold prefix
+           "rangerepair", "/", %% the AAE-Fold range fold prefix
            [ [ "types", "/", mochiweb_util:quote_plus(Type), "/"]
                 || Type =/= undefined ],
            "buckets", "/", mochiweb_util:quote_plus(Bucket),
