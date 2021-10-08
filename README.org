@@ -1,7 +1,7 @@
 * riak-erlang-http-client
 ** Overview
 
-[![Build Status](https://github.com/basho/riak-erlang-http-client/actions/workflows/erlang.yml/badge.svg?branch=develop-3.0)](https://github.com/basho/riak-erlang-http-client/actions)
+[![Build Status](https://github.com/basho/riak-erlang-http-client/actions/workflows/erlang.yml/badge.svg?branch=develop-3.0)]
 
 riak-erlang-http-client is an Erlang client for Riak, using the HTTP interface
 
