@@ -1,12 +1,13 @@
 * riak-erlang-http-client
 ** Overview
-   [[http://travis-ci.org/basho/riak-erlang-http-client][Travis-CI]] :: [[https://secure.travis-ci.org/basho/riak-erlang-http-client.png]]
+
+[![Build Status](https://github.com/basho/riak-erlang-http-client/actions/workflows/erlang.yml/badge.svg?branch=develop-3.0)](https://github.com/basho/riak-erlang-http-client/actions)
 
 =riak-erlang-http-client= is an Erlang client for Riak, using the HTTP
 interface
 
 ** Quick Start
-   You must have [[http://erlang.org/download.html][Erlang/OTP R15B01]] or later and a GNU-style build
+   You must have [[http://erlang.org/download.html][Erlang/OTP 20]] or later and a GNU-style build
    system to compile and run =riak-erlang-http-client=.
 
 #+BEGIN_SRC shell
