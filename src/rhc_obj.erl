@@ -200,17 +200,6 @@ format_link(Prefix, Bucket, Key, Tag) ->
 
 make_body(Object) ->
     case riakc_obj:get_update_value(Object) of
-        Val when is_binary(Val) -> Val;
-        Val when is_list(Val) ->
-            case is_iolist(Val) of
-                true -> Val;
-                false -> term_to_binary(Val)
-            end;
-        Val ->
-            term_to_binary(Val)
+        Val when is_binary(Val) -> 
+            Val
     end.
-
-is_iolist(Binary) when is_binary(Binary) -> true;
-is_iolist(List) when is_list(List) ->
-    lists:all(fun is_iolist/1, List);
-is_iolist(_) -> false.

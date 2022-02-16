@@ -1,0 +1,15 @@
+%% -*- erlang -*-
+{application, rhc,
+ [{description, "Riak HTTP Client"},
+  {vsn, git},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  riakc,
+                  mochiweb,
+                  webmachine,
+                  ibrowse
+                 ]},
+  {registered, []},
+  {modules, []}
+ ]}.
