@@ -283,7 +283,7 @@ peer_discovery(Rhc) ->
     MembershipURL =
         binary_to_list(iolist_to_binary([root_url(Rhc),
             "membership_request"])),
-    case request(post, MembershipURL, ["200"], [], [], Rhc) of
+    case request(get, MembershipURL, ["200"], [], [], Rhc) of
         {ok, "200", _RspHeaders, RspBody} ->
             {struct, Response} = mochijson2:decode(RspBody),
             {ok, erlify_membership_response(Response)};
