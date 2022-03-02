@@ -1798,10 +1798,10 @@ erlify_aae_find_key({struct, Props}) ->
     Val = proplists:get_value(<<"value">>, Props),
     {Key, Val}.
 
--spec erlify_membership_response({binary(), list()}) ->
+-spec erlify_membership_response([{binary(), list()}]) ->
                                 [{binary(), pos_integer()}].
-erlify_membership_response({<<"up_nodes">>, UpNodes}) ->
-    [erlify_member(IPPort) || IPPort <- UpNodes].
+erlify_membership_response([{<<"up_nodes">>, UpNodes}]) ->
+    [erlify_member(IPPort) || {struct, IPPort} <- UpNodes].
 
 -spec erlify_member([{binary(), binary()}]) ->
                                 {binary(), pos_integer()}.
@@ -1935,5 +1935,13 @@ url_escaping_test() ->
 	?assertEqual(ExpectedIndexUrl, IndexUrl),
 
 	ok.
+
+membership_response_test() ->
+    UpNodes =
+        [{<<"up_nodes">>,
+            [{struct,
+                [{<<"ip">>,<<"127.0.0.1">>},{<<"port">>,<<"10018">>}]}]}],
+    R = erlify_membership_response(UpNodes),
+    ?assertMatch([{<<"127.0.0.1">>, 10018}], R).
 
 -endif.
