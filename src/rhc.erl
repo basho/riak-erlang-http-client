@@ -36,6 +36,7 @@
          get_server_stats/1,
          get/3, get/4,
          fetch/2, fetch/3, push/3,
+         peer_discovery/1,
          put/2, put/3,
          delete/3, delete/4, delete_obj/2, delete_obj/3,
          list_buckets/1,
@@ -276,6 +277,19 @@ push_url(Rhc, QueueName) ->
             [root_url(Rhc),
                 "queuename/",
                 mochiweb_util:quote_plus(QueueName)])).
+
+-spec peer_discovery(rhc()) -> {error, term()}|{ok, iolist()}.
+peer_discovery(Rhc) ->
+    MembershipURL =
+        binary_to_list(iolist_to_binary([root_url(Rhc),
+            "membership_request"])),
+    case request(get, MembershipURL, ["200"], [], [], Rhc) of
+        {ok, "200", _RspHeaders, RspBody} ->
+            {struct, Response} = mochijson2:decode(RspBody),
+            {ok, erlify_membership_response(Response)};
+        {error, Error} ->
+            {error, Error}
+    end.
 
 -spec encode_keys_and_clocks([{riakc_obj:bucket(), riakc_obj:key(), riakc_obj:vclock()}]) -> iolist().
 encode_keys_and_clocks(KeysNClocks) ->
@@ -1784,6 +1798,18 @@ erlify_aae_find_key({struct, Props}) ->
     Val = proplists:get_value(<<"value">>, Props),
     {Key, Val}.
 
+-spec erlify_membership_response([{binary(), list()}]) ->
+                                [{binary(), pos_integer()}].
+erlify_membership_response([{<<"up_nodes">>, UpNodes}]) ->
+    [erlify_member(IPPort) || {struct, IPPort} <- UpNodes].
+
+-spec erlify_member([{binary(), binary()}]) ->
+                                {binary(), pos_integer()}.
+erlify_member(IPPort) ->
+    IP = proplists:get_value(<<"ip">>, IPPort),
+    Port = binary_to_integer(proplists:get_value(<<"port">>, IPPort)),
+    {IP, Port}.
+
 %% @doc convert the aae fold branches response to an erlang term
 -spec erlify_aae_keysclocks([{Key::binary(), Value::string()}]) ->
                              {keysclocks,
@@ -1909,5 +1935,13 @@ url_escaping_test() ->
 	?assertEqual(ExpectedIndexUrl, IndexUrl),
 
 	ok.
+
+membership_response_test() ->
+    UpNodes =
+        [{<<"up_nodes">>,
+            [{struct,
+                [{<<"ip">>,<<"127.0.0.1">>},{<<"port">>,<<"10018">>}]}]}],
+    R = erlify_membership_response(UpNodes),
+    ?assertMatch([{<<"127.0.0.1">>, 10018}], R).
 
 -endif.
