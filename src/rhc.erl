@@ -1662,9 +1662,14 @@ request(Method, Url, Expect, Headers, Body, Rhc, Timeout) ->
     AuthHeader = get_auth_header(Rhc#rhc.options),
     SSLOptions = get_ssl_options(Rhc#rhc.options),
     Accept = {"Accept", "multipart/mixed, */*;q=0.9"},
-    case ibrowse:send_req(Url, [Accept|Headers] ++ AuthHeader, Method, Body,
-                          [{response_format, binary}] ++ SSLOptions,
-                          Timeout) of
+    {ok, C} = ibrowse:spawn_worker_process(Url),
+    Response =
+        ibrowse:send_req_direct(
+            C,
+            [Accept|Headers] ++ AuthHeader, Method, Body,
+            [{response_format, binary}] ++ SSLOptions,
+            Timeout),
+    case Response of
         Resp={ok, Status, _, _} ->
             case lists:member(Status, Expect) of
                 true -> Resp;
