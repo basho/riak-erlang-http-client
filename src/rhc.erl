@@ -1666,9 +1666,11 @@ request(Method, Url, Expect, Headers, Body, Rhc, Timeout) ->
     Response =
         ibrowse:send_req_direct(
             C,
+            Url,
             [Accept|Headers] ++ AuthHeader, Method, Body,
             [{response_format, binary}] ++ SSLOptions,
             Timeout),
+    ibrowse:stop_worker_process(C),
     case Response of
         Resp={ok, Status, _, _} ->
             case lists:member(Status, Expect) of
