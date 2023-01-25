@@ -1913,8 +1913,8 @@ conditional_put_headers(Options, Object) ->
     NotModified =
         case lists:member(if_not_modified, Options) of
             true ->
-                VC = riakc_obj:vclock(Object),
-                [{?HEAD_IF_NOT_MODIFIED, VC}]
+                VC = base64:encode(riakc_obj:vclock(Object)),
+                [{?HEAD_IF_NOT_MODIFIED, VC}];
             false ->
                 []
         end,
