@@ -866,7 +866,7 @@ put(Rhc, Object, Options) ->
                 true              -> put
              end,
     {Headers0, Body} = rhc_obj:serialize_riakc_obj(Rhc, Object),
-    PutHeaders = put_headers(Options, riakc_obj:vclock(Object)),
+    PutHeaders = conditional_put_headers(Options, Object),
     Headers = 
         [{?HEAD_CLIENT, client_id(Rhc, Options)} |Headers0] ++ PutHeaders,
     case request(Method, Url, ["200", "204", "300"], Headers, Body, Rhc) of
@@ -1894,7 +1894,7 @@ get_ssl_options(Options) ->
             []
     end.
 
-put_headers(Options, Vclock) ->
+conditional_put_headers(Options, Object) ->
     NoneMatch =
         case lists:member(if_none_match, Options) of
             true ->
@@ -1905,7 +1905,8 @@ put_headers(Options, Vclock) ->
     Match =
         case lists:member(if_match, Options) of
             true ->
-                [{"If-Match", base64:encode_to_string(Vclock)}];
+                VTag = riakc_obj:get_vtag(Object),
+                [{"If-Match", VTag}];
             false ->
                 []
         end,
