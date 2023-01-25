@@ -1910,7 +1910,15 @@ conditional_put_headers(Options, Object) ->
             false ->
                 []
         end,
-    NoneMatch ++ Match.
+    NotModified =
+        case lists:member(if_not_modified, Options) of
+            true ->
+                VC = riakc_obj:vclock(Object),
+                [{?HEAD_IF_NOT_MODIFIED, VC}]
+            false ->
+                []
+        end,
+    NoneMatch ++ Match ++ NotModified.
 
 extract_bucket_type({<<"default">>, B}) ->
     {undefined, B};

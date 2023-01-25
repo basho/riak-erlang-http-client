@@ -38,6 +38,7 @@
 -define(HEAD_CLIENT,          "X-Riak-ClientId").
 -define(HEAD_USERMETA_PREFIX, "x-riak-meta-").
 -define(HEAD_INDEX_PREFIX,    "X-Riak-Index-").
+-define(HEAD_IF_NOT_MODIFIED, "X-Riak_If_Not_Modified").
 
 %%======================================================================
 %% JSON keys/values
