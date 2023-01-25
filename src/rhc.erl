@@ -1896,7 +1896,7 @@ get_ssl_options(Options) ->
 
 put_headers(Options, Vclock) ->
     NoneMatch =
-        case lists:member(if_non_match, Options) of
+        case lists:member(if_none_match, Options) of
             true ->
                 [{"If-None-Match", "*"}];
             false ->
