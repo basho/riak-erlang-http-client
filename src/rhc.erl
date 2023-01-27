@@ -866,8 +866,9 @@ put(Rhc, Object, Options) ->
                 true              -> put
              end,
     {Headers0, Body} = rhc_obj:serialize_riakc_obj(Rhc, Object),
-    Headers = [{?HEAD_CLIENT, client_id(Rhc, Options)}
-               |Headers0],
+    PutHeaders = conditional_put_headers(Options, Object),
+    Headers = 
+        [{?HEAD_CLIENT, client_id(Rhc, Options)} |Headers0] ++ PutHeaders,
     case request(Method, Url, ["200", "204", "300"], Headers, Body, Rhc) of
         {ok, Status, ReplyHeaders, ReplyBody} ->
             if Status =:= "204" ->
@@ -1892,6 +1893,32 @@ get_ssl_options(Options) ->
         _ ->
             []
     end.
+
+conditional_put_headers(Options, Object) ->
+    NoneMatch =
+        case lists:member(if_none_match, Options) of
+            true ->
+                [{"If-None-Match", "*"}];
+            false ->
+                []
+        end,
+    Match =
+        case lists:member(if_match, Options) of
+            true ->
+                VTag = riakc_obj:get_vtag(Object),
+                [{"If-Match", VTag}];
+            false ->
+                []
+        end,
+    NotModified =
+        case lists:member(if_not_modified, Options) of
+            true ->
+                VC = base64:encode(riakc_obj:vclock(Object)),
+                [{?HEAD_IF_NOT_MODIFIED, VC}];
+            false ->
+                []
+        end,
+    NoneMatch ++ Match ++ NotModified.
 
 extract_bucket_type({<<"default">>, B}) ->
     {undefined, B};
