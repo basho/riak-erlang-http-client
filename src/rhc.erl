@@ -1662,12 +1662,13 @@ request(Method, Url, Expect, Headers, Body, Rhc, Timeout) ->
     AuthHeader = get_auth_header(Rhc#rhc.options),
     SSLOptions = get_ssl_options(Rhc#rhc.options),
     Accept = {"Accept", "multipart/mixed, */*;q=0.9"},
+    Connection = {"Connection", "close"},
     {ok, C} = ibrowse:spawn_worker_process(Url),
     Response =
         ibrowse:send_req_direct(
             C,
             Url,
-            [Accept|Headers] ++ AuthHeader, Method, Body,
+            Headers ++ [Accept, Connection] ++ AuthHeader, Method, Body,
             [{response_format, binary}] ++ SSLOptions,
             Timeout),
     ibrowse:stop_worker_process(C),
