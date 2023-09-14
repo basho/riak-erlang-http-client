@@ -670,7 +670,7 @@ aae_find_tombs(Rhc, BucketAndType, KeyRange, SegmentFilter, ModifiedRange) ->
     case request(get, Url, ["200"], [], [], Rhc, ?AAEFOLD_TIMEOUT) of
         {ok, _Status, _Headers, Body} ->
             {struct, Response} = mochijson2:decode(Body),
-            {ok, erlify_aae_find_keys(Response)};
+            {ok, erlify_aae_keysclocks(Response)};
         {error, Error} ->
             {error, Error}
     end.
